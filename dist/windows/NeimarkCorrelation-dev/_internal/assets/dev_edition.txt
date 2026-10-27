@@ -1,0 +1,2 @@
+Эта метка включает конструктор оформления (F12). В обычной версии программы её нет.
+This marker enables the design editor (F12). The regular version does not contain it.

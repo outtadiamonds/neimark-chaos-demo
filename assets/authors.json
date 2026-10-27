@@ -1,0 +1,8 @@
+{
+  "lecturer": {"ru": "Григорьев Кирилл Сергеевич", "en": "Kirill S. Grigoriev"},
+  "supervisor": {"ru": "Чичигина Ольга Александровна", "en": "Olga A. Chichigina"},
+  "authors": [
+    {"name": {"ru": "Пупышев Вячеслав Александрович", "en": "Vyacheslav A. Pupyshev"}, "photo": ""},
+    {"name": {"ru": "Григорьев Александр Сергеевич", "en": "Aleksandr S. Grigoryev"}, "photo": "grigoryev.jpg"}
+  ]
+}
