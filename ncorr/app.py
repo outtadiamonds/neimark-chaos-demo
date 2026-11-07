@@ -56,11 +56,15 @@ class App:
         icon = res.image("img", "cmc_logo.png")
         if icon:
             pygame.display.set_icon(pygame.transform.smoothscale(icon, (64, 64)))
+        self.monochrome = False
         self._caption()
+        self.bw_button = Button(lambda: t("bw_color") if self.monochrome else t("bw_on"), self._toggle_bw)
         self.lang_button = Button(lambda: t("lang_switch"), self._toggle_lang)
         # Две вкладки демонстрации; переключатель общий, его кладут в свои widgets оба экрана
         self.tabs = Segmented([("motion", lambda: t("tab_motion")), ("demo", lambda: t("tab_corr"))],
                               "motion", self._switch_tab)
+        self.panel_open = True
+        self.panel_toggle = Button(lambda: "›" if self.panel_open else "‹", self._toggle_panel)
         self._create_screens()
         self.active = "menu"
         self.running = True
@@ -98,9 +102,16 @@ class App:
     def _caption(self):
         pygame.display.set_caption(t("window_title"))
 
+    def _toggle_bw(self):
+        self.monochrome = not self.monochrome
+
     def _toggle_lang(self):
         i18n.toggle()
         self._caption()
+
+    def _toggle_panel(self):
+        self.panel_open = not self.panel_open
+        self._layout()  # новая ширина графиков без сброса опыта
 
     def _switch_tab(self, name):
         if name == "demo":
@@ -121,7 +132,21 @@ class App:
             rect = pygame.Rect(int(w * 0.04), h - int(h * 0.1), int(w * 0.14), int(h * 0.06))
         self.lang_button.rect = rect
         self.lang_button.font_size = int(u * (1.05 if self.active in ("demo", "motion") else 1.4))
+        self.lang_button.visible = self.bw_button.visible = self.active == "menu"
         design.apply_layout(self, u)
+        # Две общие кнопки занимают прежнее место кнопки языка.
+        slot = self.lang_button.rect.copy()
+        self.lang_button.rect.width = max(45, (slot.width - 4) // 2)
+        self.bw_button.rect = pygame.Rect(slot.x + self.lang_button.rect.width + 4, slot.y,
+                                        slot.width - self.lang_button.rect.width - 4, slot.height)
+        self.bw_button.font_size = self.lang_button.font_size
+        self.panel_toggle.visible = self.active in ("motion", "demo")
+        if self.panel_toggle.visible:
+            screen = self.screens[self.active]
+            x = screen.panel.left - 30 if self.panel_open else w - 34
+            self.panel_toggle.rect = pygame.Rect(x, h // 2 - 40, 30, 80)
+            self.panel_toggle.font_size = 32
+
 
     def show(self, name):
         self.active = name
@@ -149,6 +174,8 @@ class App:
             self.running = False
         elif event.type == pygame.WINDOWSIZECHANGED:
             self._layout()
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_F10:
+            self._toggle_bw()
         elif event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
             self.toggle_fullscreen()
         elif event.type == pygame.KEYDOWN and event.key == pygame.K_F12 and self.dev:
@@ -160,7 +187,9 @@ class App:
                 self.toggle_fullscreen()
             elif self.active != "menu":
                 self.show("menu")
-        elif not self.lang_button.handle(event):
+        elif self.panel_toggle.handle(event):
+            pass
+        elif not self.bw_button.handle(event) and not self.lang_button.handle(event):
             self.screens[self.active].handle(event)
 
     def run(self, frames=None, screenshot=None):
@@ -178,11 +207,15 @@ class App:
             self.screen.fill(theme.BG)
             screen.draw(self.screen)
             self.lang_button.draw(self.screen)
+            self.bw_button.draw(self.screen)
+            self.panel_toggle.draw(self.screen)
             if recording:
                 self.dev.texts, widgets.DRAWN, i18n.TRACE = widgets.DRAWN, None, None
                 self.dev.draw(self.screen)
             elif self.dev:
                 self.dev.draw_status(self.screen)
+            if self.monochrome:
+                pygame.transform.grayscale(self.screen, self.screen)
             pygame.display.flip()
             n += 1
             if frames is not None and n >= frames:

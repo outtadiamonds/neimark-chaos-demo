@@ -20,7 +20,7 @@ from .. import resources as res
 from .. import theme
 from ..i18n import t
 from ..physics import neimark as nm
-from ..ui.plot import Axes, boxed_text, dashed_polyline, label_box
+from ..ui.plot import Axes, point_marker, graph_line, graph_lines, curve_line, fading_trail, trail_color, boxed_text, dashed_polyline, label_box
 from ..ui.widgets import Button, Segmented, Slider, draw_text, fit_text, remember_text
 from .base import Screen
 from .demo import draw_legend
@@ -60,7 +60,7 @@ refresh()
 
 def curve(half, delta, upto=math.pi):
     """Точки (u, x, v) одного полупериода от u = 0 до upto."""
-    n = max(1, int(CURVE_SAMPLES * upto / math.pi))
+    n = max(1, int(3 * CURVE_SAMPLES * upto / math.pi))
     out = []
     for j in range(n + 1):
         u = upto * j / n
@@ -80,7 +80,6 @@ class MotionScreen(Screen):
         "time": ("time_ax", "time_title"),
         "map": ("map_ax", "map_title"),
         "twins": ("seq_ax", "twin_title"),
-        "dy": ("dy_ax", None),
     }
 
     def __init__(self, app):
@@ -282,7 +281,7 @@ class MotionScreen(Screen):
         self.u = u
         m = int(u * 1.1)
         pw = int(max(w * 0.25, 300))
-        px = w - pw - m
+        px = w - pw - m if self.app.panel_open else w + 12
         self.panel = pygame.Rect(px, m, pw, h - 2 * m)
         fs = int(u * 1.05)
         for wdg in (self.sc_row1, self.sc_row2, self.twin_sel, self.b_run, self.b_step, self.b_reset,
@@ -324,9 +323,9 @@ class MotionScreen(Screen):
         # снизу вверх: язык и «Назад», строки информации, кнопки, скорость
         bottom = self.panel.bottom - 10
         half = width // 2
-        self.b_back.rect = pygame.Rect(x + half + 4, bottom - row, width - half - 4, row)
+        self.b_back.rect = pygame.Rect(x, bottom - row, width, row)
         self.lang_rect = pygame.Rect(x, bottom - row, half - 4, row)
-        info_lines = 4
+        info_lines = 3
         line_h = int(u * 1.3)
         y2 = bottom - row - gap * 2 - line_h * info_lines
         self.info_pos = (x, y2)
@@ -346,7 +345,7 @@ class MotionScreen(Screen):
 
         # слева три ряда: осциллятор; фазовая плоскость + v(t); отображение + две траектории
         lx = m + int(u * 3.2)
-        lw = px - m - lx
+        lw = (px - m - lx - 30) if self.app.panel_open else (w - 48 - lx)
         title_h, ticks_h, pgap = int(u * 1.5), int(u * 1.5), int(u * 0.6)
         free = h - 2 * m - 3 * title_h - 2 * ticks_h - 2 * pgap - int(u * 0.5)
         h0 = int(free * 0.18)
@@ -372,9 +371,9 @@ class MotionScreen(Screen):
         x2 = lx + side2 + gx
         w2 = lx + lw - x2
         self.twin_title = (x2, y)
-        top_h = int((h2 - ticks_h) * 0.6)
-        self.seq_ax = Axes((x2, y + title_h, w2, top_h), (0, 1), (-1, 1))
-        self.dy_ax = Axes((x2, y + title_h + top_h + ticks_h, w2, h2 - top_h - ticks_h), (0, 1), (-9, 1))
+        # Один высокий график; подпись и легенда вынесены за область данных.
+        self.seq_ax = Axes((x2, y + title_h + int(u*1.5), w2,
+                            h2 - int(u*3.4)), (0, 1), (-1, 1))
 
     # ---------- рисование ----------
 
@@ -390,8 +389,6 @@ class MotionScreen(Screen):
         self.b_proj.selected = self.show_projection
         self.b_sect.selected = self.show_sections
         super().draw(surf)
-        if self.formula_visible:
-            self._draw_formula(surf)
         self._draw_info(surf)
         self._draw_oscillator(surf)
         self._draw_phase(surf)
@@ -450,13 +447,12 @@ class MotionScreen(Screen):
         lines = [
             t("state_line", t=f"{mo.t:.2f}", x=theme.num(x), v=theme.num(v)),
             t("count_line", n=mo.crossings, hits=mo.hits),
-            t("params_line", s=f"{p.s:.3f}", delta=f"{p.delta:.3f}"),
             region,
         ]
         px, py = self.info_pos
         width = self.panel.right - 12 - px
         for i, line in enumerate(lines):
-            color = theme.NEGATIVE if i == 3 and not p.is_chaotic() else theme.FG
+            color = theme.NEGATIVE if line == region and not p.is_chaotic() else theme.FG
             draw_text(surf, line, (px, py), fit_text(line, int(u * 0.95), width), color)
             py += int(u * 1.3)
 
@@ -478,11 +474,11 @@ class MotionScreen(Screen):
         scale = (right - left) * 0.38 / self.ext
         size = int(min(u * 1.7, r.height * 0.4))
         rail = min(cy + int(u * 1.6), r.bottom - int(u * 1.2))
-        pygame.draw.line(surf, theme.AXIS, (left, rail), (right, rail), 2)
+        graph_line(surf, theme.AXIS, (left, rail), (right, rail), 2)
         fs = int(u * 0.85)
         for i in (-2, -1, 0, 1, 2):
             tx = cx + i * self.ext / 2 * scale
-            pygame.draw.line(surf, theme.AXIS, (tx, rail - 4), (tx, rail + 4))
+            graph_line(surf, theme.AXIS, (tx, rail - 4), (tx, rail + 4))
             draw_text(surf, theme.num(i * self.ext / 2, 2) if i else "0", (tx, rail + 4), fs, theme.MUTED,
                       anchor="midtop")
         draw_text(surf, t("g_x"), (right, rail + 4), fs, theme.MUTED, anchor="topright")
@@ -492,7 +488,7 @@ class MotionScreen(Screen):
         pygame.draw.rect(surf, theme.PROCESS, wall)
         for i in range(6):
             y0 = wall.y + i * wall.height / 6
-            pygame.draw.line(surf, theme.AXIS, (left - 7, y0 + 6), (left, y0))
+            graph_line(surf, theme.AXIS, (left - 7, y0 + 6), (left, y0))
         bx = cx + max(-self.ext, min(self.ext, x)) * scale
         # пружина: зигзаг от стенки до груза
         start, end = left + 6, bx - size / 2
@@ -502,7 +498,7 @@ class MotionScreen(Screen):
         for i in range(1, coils):
             pts.append((start + 8 + span * i / coils, cy + (size * 0.35 if i % 2 else -size * 0.35)))
         pts += [(end - 8, cy), (end, cy)]
-        pygame.draw.lines(surf, theme.AXIS, False, pts, 2)
+        graph_lines(surf, theme.AXIS, False, pts, 2)
         # груз второй траектории — контуром (пока траектории совпадают, он скрыт под основным)
         if self.twin and not self.twin.escaped:
             tx = cx + max(-self.ext, min(self.ext, self.twin.state()[0])) * scale
@@ -518,7 +514,7 @@ class MotionScreen(Screen):
         if abs(length) > 3:
             tip = bx + length
             sign = 1 if length > 0 else -1
-            pygame.draw.line(surf, color, (bx, ay), (tip, ay), 3)
+            graph_line(surf, color, (bx, ay), (tip, ay), 3)
             pygame.draw.polygon(surf, color, [(tip, ay), (tip - sign * 9, ay - 5), (tip - sign * 9, ay + 5)])
             draw_text(surf, t("g_v"), (tip + sign * 6, ay), fs, color, anchor="midleft" if sign > 0 else "midright")
         if hit:
@@ -537,7 +533,7 @@ class MotionScreen(Screen):
         ax.x0, ax.x1, ax.y0, ax.y1 = -e, e, -e, e
         self._title(surf, "m_phase", self.phase_title, self.time_title[0] - u)
         ax.frame(surf, int(u * 0.85), xticks=4, yticks=4, xlabel=t("g_x"))
-        pygame.draw.line(surf, theme.AXIS, (ax.px(0), ax.rect.y), (ax.px(0), ax.rect.bottom))
+        graph_line(surf, theme.AXIS, (ax.px(0), ax.rect.y), (ax.px(0), ax.rect.bottom))
         ay = ax.py(nm.A)
         dashed_polyline(surf, theme.NEGATIVE, [(ax.rect.x, ay), (ax.rect.right, ay)], dash=5, gap=4, width=1)
         draw_text(surf, t("g_a"), (ax.rect.right - 4, ay - 2), int(u * 0.85), theme.NEGATIVE, anchor="bottomright")
@@ -549,24 +545,27 @@ class MotionScreen(Screen):
                 upto = tw.s if half is tw.current else math.pi
                 pts = [ax.point(x, v) for _, x, v in curve(half, d, upto)]
                 if len(pts) > 1:
-                    pygame.draw.aalines(surf, theme.TWIN_LIGHT, False, pts)
+                    curve_line(surf, theme.TWIN_LIGHT, False, pts)
         mo = self.motion
         halves = mo.halves[-PHASE_TRAIL:]
         last = len(halves) - 1
         for i, half in enumerate(halves):
             upto = mo.s if i == last else math.pi
-            shade = min(205, 20 + 8 * (last - i))
-            pts = [ax.point(x, v) for _, x, v in curve(half, d, upto)]
-            if len(pts) > 1:
-                pygame.draw.aalines(surf, (shade, shade, shade), False, pts)
+            samples = curve(half, d, upto)
+            pts = [ax.point(x, v) for _, x, v in samples]
+            ages = [(mo.t - half.t0 - u0) / math.pi for u0, _, _ in samples]
+            fading_trail(surf, pts, ages, theme.PROCESS, min(PHASE_TRAIL, max(0.5, mo.t / math.pi)))
             if half.hit:
-                pygame.draw.line(surf, theme.NEGATIVE, ax.point(0, half.before), ax.point(0, half.after), 2)
+                age = (mo.t - half.t0 - math.pi) / math.pi
+                graph_line(surf, trail_color(theme.NEGATIVE, age, PHASE_TRAIL),
+                           ax.point(0, half.before), ax.point(0, half.after), 2)
         if self.show_sections:
             for half in halves:
-                pygame.draw.circle(surf, theme.SHIFTED, ax.point(0, half.y), 3)
+                age = (mo.t - half.t0) / math.pi
+                point_marker(surf, trail_color(theme.SHIFTED, age, PHASE_TRAIL), ax.point(0, half.y), 2)
         if tw and not tw.escaped:
-            pygame.draw.circle(surf, theme.TWIN, ax.point(*tw.state()), 8, 2)
-        pygame.draw.circle(surf, theme.CURSOR, ax.point(*mo.state()), 6)
+            point_marker(surf, theme.TWIN, ax.point(*tw.state()), 8, 2)
+        point_marker(surf, theme.CURSOR, ax.point(*mo.state()), 6)
         surf.set_clip(None)
         draw_text(surf, t("g_v"), (ax.rect.x + 5, ax.rect.y), int(u * 0.95), theme.FG, bold=True)
 
@@ -585,13 +584,13 @@ class MotionScreen(Screen):
             upto = mo.s if half is mo.current else math.pi
             pts = [ax.point((half.t0 + uu) / math.pi, v) for uu, _, v in curve(half, d, upto)]
             if len(pts) > 1:
-                pygame.draw.aalines(surf, color, False, pts)
+                curve_line(surf, color, False, pts)
             if half.hit:
                 tx = (half.t0 + math.pi) / math.pi
-                pygame.draw.line(surf, theme.NEGATIVE if marks else color, ax.point(tx, half.before),
+                graph_line(surf, theme.NEGATIVE if marks else color, ax.point(tx, half.before),
                                  ax.point(tx, half.after), 2 if marks else 1)
             if marks and self.show_sections:
-                pygame.draw.circle(surf, theme.SHIFTED, ax.point(half.t0 / math.pi, half.y), 3)
+                point_marker(surf, theme.SHIFTED, ax.point(half.t0 / math.pi, half.y), 3)
 
     def _draw_timeline(self, surf):
         u = self.u
@@ -608,7 +607,7 @@ class MotionScreen(Screen):
             self._draw_curve_in_time(surf, ax, self.twin, t0, theme.TWIN, False)
         mo = self.motion
         self._draw_curve_in_time(surf, ax, mo, t0, theme.PROCESS, True)
-        pygame.draw.circle(surf, theme.CURSOR, ax.point(mo.t / math.pi, mo.state()[1]), 6)
+        point_marker(surf, theme.CURSOR, ax.point(mo.t / math.pi, mo.state()[1]), 6)
         surf.set_clip(None)
 
     def _draw_projection(self, surf):
@@ -639,32 +638,34 @@ class MotionScreen(Screen):
             hi = ax.point(nm.A, nm.A)
             pygame.draw.rect(surf, theme.REGION, (lo[0], hi[1], hi[0] - lo[0], lo[1] - hi[1]))
         dashed_polyline(surf, theme.AXIS, [ax.point(-e, -e), ax.point(e, e)], dash=4, gap=4, width=1)
-        pygame.draw.line(surf, theme.AXIS, (ax.px(0), ax.rect.y), (ax.px(0), ax.rect.bottom))
+        graph_line(surf, theme.AXIS, (ax.px(0), ax.rect.y), (ax.px(0), ax.rect.bottom))
         br = p.branch
         # правая ветвь (удара нет) и левая (удар), без вертикального соединения в разрыве
-        pygame.draw.line(surf, theme.SHIFTED, ax.point(br, -p.s * br), ax.point(e, -p.s * e), 2)
+        graph_line(surf, theme.SHIFTED, ax.point(br, -p.s * br), ax.point(e, -p.s * e), 3)
         if p.h > 0:
-            pygame.draw.line(surf, theme.SHIFTED, ax.point(-e, p.s * e - p.h), ax.point(br, nm.A - p.h), 2)
+            graph_line(surf, theme.SHIFTED, ax.point(-e, p.s * e - p.h), ax.point(br, nm.A - p.h), 3)
         else:
-            pygame.draw.line(surf, theme.SHIFTED, ax.point(-e, p.s * e), ax.point(br, nm.A), 2)
+            graph_line(surf, theme.SHIFTED, ax.point(-e, p.s * e), ax.point(br, nm.A), 3)
         bx = ax.px(br)
         dashed_polyline(surf, theme.CURSOR, [(bx, ax.rect.y), (bx, ax.rect.bottom)], dash=4, gap=4, width=1)
-        pairs = self.motion.pairs()
+        # Точки живут столько же, сколько фазовый след: последние PHASE_TRAIL полуколебаний.
+        # Возраст считается по времени, поэтому исчезновение плавное даже между прохождениями x=0.
+        pairs = self.motion.pairs()[-PHASE_TRAIL:]
         n = len(pairs)
         for i, (a, b) in enumerate(pairs):
-            k = (i + 1) / n
-            color = tuple(int(255 + (c - 255) * (0.25 + 0.75 * k)) for c in theme.CURSOR)
-            pygame.draw.circle(surf, color, ax.point(a, b), 2 if n > 300 else 3)
+            age = n - 1 - i + self.motion.s / math.pi
+            color = trail_color(theme.CURSOR, age, PHASE_TRAIL)
+            point_marker(surf, color, ax.point(a, b), 2)
         if self.twin:
             tp = self.twin.pairs()
             if tp:
-                pygame.draw.circle(surf, theme.TWIN, ax.point(*tp[-1]), 11, 2)
+                point_marker(surf, theme.TWIN, ax.point(*tp[-1]), 11, 2)
         if pairs:
-            pygame.draw.circle(surf, theme.CURSOR, ax.point(*pairs[-1]), 8, 2)
+            point_marker(surf, theme.CURSOR, ax.point(*pairs[-1]), 8, 2)
         if p.h > 0:
-            pygame.draw.circle(surf, theme.SHIFTED, ax.point(br, nm.A - p.h), 4)
-            pygame.draw.circle(surf, theme.BG, ax.point(br, nm.A), 4)
-            pygame.draw.circle(surf, theme.SHIFTED, ax.point(br, nm.A), 4, 2)
+            point_marker(surf, theme.SHIFTED, ax.point(br, nm.A - p.h), 4)
+            point_marker(surf, theme.BG, ax.point(br, nm.A), 4)
+            point_marker(surf, theme.SHIFTED, ax.point(br, nm.A), 4, 2)
         surf.set_clip(None)
         draw_text(surf, t("g_yn1"), (ax.rect.x + 5, ax.rect.y), int(u * 0.95), theme.FG, bold=True)
         draw_text(surf, t("y_star"), (bx + 4, ax.rect.bottom - 4), int(u * 0.85), theme.CURSOR, anchor="bottomleft")
@@ -674,72 +675,37 @@ class MotionScreen(Screen):
     def _draw_twins(self, surf):
         u = self.u
         fs = int(u * 0.85)
-        ax, dax = self.seq_ax, self.dy_ax
-        p = self.params
+        ax, p = self.seq_ax, self.params
         last = self.motion.crossings
-        first = max(0, last - TRACK)
-        ax.x0, ax.x1 = first - 0.5, first + TRACK + 0.5
+        first = max(0, last - TRACK + 1)
+        ax.x0, ax.x1 = first - 0.5, first + TRACK - 0.5
         lim = max(1.25, min(self.ext, 3.0))
-        ax.y0, ax.y1 = -lim if not p.is_chaotic() else p.lower - 0.25, lim if not p.is_chaotic() else nm.A + 0.25
+        ax.y0, ax.y1 = (-lim, lim) if not p.is_chaotic() else (p.lower-0.25, nm.A+0.25)
         self._title(surf, "m_twins" if self.twin else "m_seq", self.twin_title, ax.rect.right)
-        ax.frame(surf, fs, xticks=4, yticks=4)
-        # точка ветвления: ниже неё через полпериода будет удар
-        by = ax.py(p.branch)
-        if ax.y0 < p.branch < ax.y1:
-            dashed_polyline(surf, theme.CURSOR, [(ax.rect.x, by), (ax.rect.right, by)], dash=4, gap=4, width=1)
-        surf.set_clip(ax.rect.inflate(8, 8))
-        if self.split_n is not None and ax.x0 <= self.split_n <= ax.x1:
-            sx = ax.px(self.split_n)
-            dashed_polyline(surf, theme.NEGATIVE, [(sx, ax.rect.y), (sx, ax.rect.bottom)], dash=3, gap=3, width=1)
-        main = [(ax.px(n), ax.py(ax.clip_y(a))) for n, a, _ in self.track]
-        twin = [(ax.px(n), ax.py(ax.clip_y(b))) for n, _, b in self.track if b is not None]
-        if len(twin) > 1:
-            pygame.draw.aalines(surf, theme.TWIN_LIGHT, False, twin)
-        if len(main) > 1:
-            pygame.draw.aalines(surf, theme.AXIS, False, main)
-        for pt in twin:
-            pygame.draw.circle(surf, theme.TWIN, pt, 6, 2)
+        ax.frame(surf, fs, xticks=5, yticks=3, xlabel=t("g_n"))
+        rows = [(n,a,b) for n,a,b in self.track if first <= n < first + TRACK]
+        main = [ax.point(n, ax.clip_y(a)) for n,a,_ in rows]
+        twin = [ax.point(n, ax.clip_y(b)) for n,_,b in rows if b is not None]
+        surf.set_clip(ax.rect)
+        if len(twin)>1:
+            dashed_polyline(surf, theme.TWIN, twin, dash=6, gap=4)
+        if len(main)>1:
+            curve_line(surf, theme.PROCESS, False, main)
         for pt in main:
-            pygame.draw.circle(surf, theme.PROCESS, pt, 3)
+            point_marker(surf, theme.PROCESS, pt, 2)
+        for pt in twin:
+            point_marker(surf, theme.TWIN, pt, 3, 1)
+        if main:
+            point_marker(surf, theme.CURSOR, main[-1], 5)
         surf.set_clip(None)
-        draw_text(surf, t("g_yn"), (ax.rect.x + 5, ax.rect.y), int(u * 0.95), theme.FG, bold=True)
-        if ax.y0 < p.branch < ax.y1:
-            boxed_text(surf, t("g_ystar"), res.font(fs), theme.CURSOR, bottomright=(ax.rect.right - 3, by - 1))
-
-        # нижний график: lg |Δyₙ| и оценка ε·γ^(n/2)
-        dax.x0, dax.x1 = ax.x0, ax.x1
-        dax.frame(surf, fs, xticks=4, yticks=3, xlabel=t("g_n"), zero=False,
-                  yfmt=lambda v: f"10{superscript(int(round(v)))}")
-        eps = TWINS.get(self.twin_key)
-        if not eps:
-            draw_text(surf, t("twin_hint"), dax.rect.center, fs, theme.MUTED, anchor="center")
-            return
-        surf.set_clip(dax.rect)
-        n0 = self.twin_start
-        slope = math.log10(p.s) if p.gamma > 1 else 0.0
-        a = (max(dax.x0, n0), math.log10(eps) + (max(dax.x0, n0) - n0) * slope)
-        b = (dax.x1, math.log10(eps) + (dax.x1 - n0) * slope)
-        if b[0] > a[0]:
-            dashed_polyline(surf, theme.THEORY, [dax.point(*a), dax.point(*b)], dash=5, gap=4, width=2)
-        for n, ya, yb in self.track:
-            if yb is None:
-                continue
-            dy = abs(ya - yb)
-            pygame.draw.circle(surf, theme.TWIN, dax.point(n, dax.clip_y(math.log10(dy) if dy > 0 else -99)), 3)
-        surf.set_clip(None)
-        boxed_text(surf, t("g_dy"), res.font(fs, bold=True), theme.FG, topleft=(dax.rect.x + 5, dax.rect.y + 2))
-        draw_legend(surf, [("dash", theme.THEORY, t("g_growth"))], dax.rect.right - 4, dax.rect.y + 3, fs)
-        # подпись: когда разошлись и сколько ожидалось
-        expect = math.log(1 / eps) / math.log(p.s) if p.gamma > 1 else float("inf")
-        if self.split_n is not None:
-            text = t("twin_split", n=self.split_n - n0, e=f"{expect:.1f}")
-        elif not p.is_chaotic():
-            text = t("twin_nochaos")
-        else:
-            text = t("twin_same", e=f"{expect:.1f}")
-        size = fit_text(text, fs, ax.rect.width - 10)
-        boxed_text(surf, text, res.font(size), theme.NEGATIVE if self.split_n is not None else theme.FG,
-                   bottomleft=(ax.rect.x + 5, ax.rect.bottom - 3))
+        draw_text(surf, t("g_yn"), (ax.rect.x+5,ax.rect.y), fs, bold=True)
+        if self.twin:
+            draw_legend(surf, [("rect",theme.PROCESS,t("twin_main_legend")),
+                              ("dash",theme.TWIN,t("twin_second_legend"))],
+                        ax.rect.right, ax.rect.y-int(u*1.4), fs)
+            text = t("twin_split_short", n=self.split_n-self.twin_start) if self.split_n is not None else t("twin_same_short")
+            draw_text(surf, text, (ax.rect.x, ax.rect.bottom+int(u*1.7)),
+                      fit_text(text,fs,ax.rect.width), theme.NEGATIVE if self.split_n else theme.MUTED)
 
     # ---------- для автоматической проверки ----------
 

@@ -10,10 +10,10 @@ import pygame
 from .. import theme
 from ..i18n import t
 from ..physics import neimark as nm
-from .plot import dashed_polyline
+from .plot import point_marker, graph_line, graph_lines, curve_line, fading_trail, dashed_polyline
 from .widgets import Widget, draw_text
 
-SAMPLES = 28  # точек на полупериод
+SAMPLES = 84  # точек на полупериод
 TRAIL = 5     # сколько прошлых полупериодов оставлять на экране
 
 
@@ -52,8 +52,8 @@ class PhasePortrait(Widget):
             return
         r = self.rect
         fs = self.font_size
-        pygame.draw.line(surf, theme.AXIS, (r.x, r.centery), (r.right, r.centery))
-        pygame.draw.line(surf, theme.AXIS, (r.centerx, r.y), (r.centerx, r.bottom))
+        graph_line(surf, theme.AXIS, (r.x, r.centery), (r.right, r.centery))
+        graph_line(surf, theme.AXIS, (r.centerx, r.y), (r.centerx, r.bottom))
         draw_text(surf, t("g_x"), (r.right - 2, r.centery + 2), fs, theme.MUTED, anchor="topright")
         draw_text(surf, t("g_v"), (r.centerx + 4, r.y), fs, theme.MUTED)
         ax, ay = self._pt(0, nm.A)
@@ -77,12 +77,12 @@ class PhasePortrait(Widget):
                 d = self.params.delta
                 pts.append(self._pt(y * math.exp(d * u) * math.sin(u), y * nm.shape(u, d)))
             if len(pts) > 1:
-                pygame.draw.aalines(surf, color, False, pts)
+                fading_trail(surf, pts, [pos - n - j / SAMPLES for j in range(len(pts))], theme.PROCESS, min(TRAIL, max(0.5, pos - start)))
             if n < n_now:
                 z = -self.params.s * y
                 if z >= nm.A:  # удар: вертикальный скачок вниз на оси x = 0
-                    pygame.draw.line(surf, theme.NEGATIVE, self._pt(0, z), self._pt(0, self.ys[n + 1]), 2)
+                    graph_line(surf, theme.NEGATIVE, self._pt(0, z), self._pt(0, self.ys[n + 1]), 2)
         for n in range(first, n_now + 1):
-            pygame.draw.circle(surf, theme.SHIFTED, self._pt(0, self.ys[n]), 3)
-        pygame.draw.circle(surf, theme.CURSOR, pts[-1], 5)
+            point_marker(surf, theme.SHIFTED, self._pt(0, self.ys[n]), 3)
+        point_marker(surf, theme.CURSOR, pts[-1], 5)
         surf.set_clip(None)

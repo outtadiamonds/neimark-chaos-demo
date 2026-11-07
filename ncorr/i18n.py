@@ -7,6 +7,12 @@ OVERRIDES = {"ru": {}, "en": {}}  # надписи, изменённые в ре
 TRACE = None  # в режиме разработчика: [(готовый текст, ключ)] за кадр — чтобы знать, какой ключ где нарисован
 
 STRINGS = {
+    "twin_main_legend": ("основная", "main"),
+    "twin_second_legend": ("близкая (+ε)", "nearby (+ε)"),
+    "twin_split_short": ("Траектории разошлись через {n} полупериодов", "Trajectories diverged after {n} half-periods"),
+    "twin_same_short": ("Траектории пока близки", "Trajectories are still close"),
+    "bw_on": ("Ч/Б", "B/W"),
+    "bw_color": ("Цвет", "Color"),
     # Шапка и меню
     "msu": ("Московский государственный университет имени М.В. Ломоносова",
             "Lomonosov Moscow State University"),
@@ -76,8 +82,8 @@ STRINGS = {
     "build_all": ("Построить всё", "Build all"),
     "info_value_d": ("R({k}) / R(0) = {v}   теория: {t}", "R({k}) / R(0) = {v}   theory: {t}"),
     "info_value_c": ("C({tau}) / C(0) = {v}   теория: {t}", "C({tau}) / C(0) = {v}   theory: {t}"),
-    "info_stats_d": ("⟨y⟩ = {mean}   D = {var}   δ = {delta}", "⟨y⟩ = {mean}   D = {var}   δ = {delta}"),
-    "info_stats_c": ("⟨v⟩ = {mean}   D = {var}   δ = {delta}", "⟨v⟩ = {mean}   D = {var}   δ = {delta}"),
+    "info_stats_d": ("⟨y⟩ = {mean}   D = {var}", "⟨y⟩ = {mean}   D = {var}"),
+    "info_stats_c": ("⟨v⟩ = {mean}   D = {var}", "⟨v⟩ = {mean}   D = {var}"),
     "info_partition_exact": ("Марковское разбиение: N = {n} (точное)", "Markov partition: N = {n} (exact)"),
     "info_partition_approx": ("Марковское разбиение: N = {n} (приближённое)",
                               "Markov partition: N = {n} (approximate)"),
@@ -104,7 +110,7 @@ STRINGS = {
                 "The motion went to infinity: the kick is too weak. Press “Reset” or change h."),
     "state_line": ("t = {t}   x = {x}   v = {v}", "t = {t}   x = {x}   v = {v}"),
     "count_line": ("Прохождений x = 0: {n}   ударов: {hits}", "Passages of x = 0: {n}   kicks: {hits}"),
-    "params_line": ("√γ = {s} (рост за полпериода)   δ = {delta}", "√γ = {s} (growth per half-period)   δ = {delta}"),
+    "params_line": ("√γ = {s} (рост за полпериода)", "√γ = {s} (growth per half-period)"),
     "region_in_anomalous": ("Аномальный режим (h > a), область хаоса", "Anomalous mode (h > a), chaos region"),
     "region_in_normal": ("Нормальный режим (h < a), область хаоса", "Normal mode (h < a), chaos region"),
     "region_out_weak": ("Вне области хаоса: h/a < γ − 1, амплитуда растёт", "Outside the chaos region: h/a < γ − 1, amplitude grows"),
@@ -115,7 +121,7 @@ STRINGS = {
     "lg_twin": ("близкая траектория v₀ + ε", "nearby trajectory v₀ + ε"),
     "y_star": ("y* — бифуркация", "y* — bifurcation"),
     "sec_twin": ("Близкая траектория: v₀ + ε, ε =", "Nearby trajectory: v₀ + ε, ε ="),
-    "twin_off": ("нет", "off"),
+    "twin_off": ("Без ε", "No ε"),
     "m_twins": ("Две траектории: v₀ и v₀ + ε", "Two trajectories: v₀ and v₀ + ε"),
     "m_seq": ("Последовательность yₙ", "Sequence yₙ"),
     "twin_same": ("пока совпадают; разойдутся через ≈ ln(1/ε)/ln√γ = {e}",

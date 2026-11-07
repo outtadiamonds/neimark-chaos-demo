@@ -18,7 +18,7 @@ from ..physics import correlation, markov, neimark as nm
 from ..ui import param_plane
 from ..ui.param_plane import ParamPlane, clamp
 from ..ui.phase_portrait import PhasePortrait
-from ..ui.plot import Axes, boxed_text, dashed_polyline, label_box
+from ..ui.plot import Axes, point_marker, graph_line, graph_lines, curve_line, fading_trail, boxed_text, dashed_polyline, label_box
 from ..ui.widgets import Button, Segmented, Slider, draw_text, fit_text, remember_text
 from .base import Screen
 
@@ -335,11 +335,13 @@ class DemoScreen(Screen):
     # ---------- раскладка ----------
 
     def layout(self, w, h):
-        u = theme.unit(h)
+        # Панель имеет фиксированное число рядов: оставляем место двум мини-графикам
+        # на всех высотах, включая 1200 px, где старый порог прятал их при F11.
+        u = max(10, h // 56)
         self.u = u
         m = int(u * 1.1)
         pw = int(max(w * 0.27, 300))
-        px = w - pw - m
+        px = w - pw - m if self.app.panel_open else w + 12
         self.panel = pygame.Rect(px, m, pw, h - 2 * m)
         fs = int(u * 1.05)
         for wdg in (self.mode_sel, self.preset_sel, self.b_run, self.b_step, self.b_reset, self.b_all, self.b_back):
@@ -376,9 +378,9 @@ class DemoScreen(Screen):
 
         # снизу вверх: назад, информация, кнопки, ползунки построения
         bottom = self.panel.bottom - 10
-        self.b_back.rect = pygame.Rect(x + width // 2 + 4, bottom - row, width - width // 2 - 4, row)
+        self.b_back.rect = pygame.Rect(x, bottom - row, width, row)
         self.lang_rect = pygame.Rect(x, bottom - row, width // 2 - 4, row)
-        info_lines = 4
+        info_lines = 2
         y2 = bottom - row - gap * 2 - int(u * 1.35) * info_lines
         self.info_pos = (x, y2)
         y2 -= gap * 2 + row
@@ -396,7 +398,7 @@ class DemoScreen(Screen):
         self.labels.append(("sec_build", (x, y2)))
 
         plane_h = y2 - plane_top - gap * 2
-        self.plane.visible = self.portrait.visible = plane_h > u * 5.5
+        self.plane.visible = self.portrait.visible = True
         self.portrait.font_size = int(u * 0.85)
         if self.plane.visible:
             half = (width - 10) // 2
@@ -409,7 +411,7 @@ class DemoScreen(Screen):
 
         # графики слева
         lx = m + int(u * 3.2)
-        lw = px - m - lx
+        lw = (px - m - lx - 30) if self.app.panel_open else (w - 48 - lx)
         title_h, ticks_h, pgap = int(u * 1.5), int(u * 1.5), int(u * 0.6)
         weights = (1.0, 1.0, 1.15, 1.4)
         free = h - 2 * m - 4 * (title_h + ticks_h) - 3 * pgap
@@ -471,9 +473,7 @@ class DemoScreen(Screen):
             lines.append("")
         lines.append(t("info_stats_" + self.mode, mean=theme.num(self.est.mean), var=theme.num(self.est.var),
                        delta=theme.num(self.params.delta)))
-        part_key = "info_partition_exact" if self.partition.exact else "info_partition_approx"
-        lines.append(t(part_key, n=self.partition.n))
-        lines.append(t("info_edges", lo=theme.num(self.params.lower), br=theme.num(self.params.branch)))
+
         width = self.panel.right - 12 - x
         for line in lines:
             draw_text(surf, line, (x, y), fit_text(line, fs, width), theme.FG)
@@ -496,14 +496,14 @@ class DemoScreen(Screen):
             base = ax.py(0.0)
             dense = len(pts) > 150
             for px, py in pts:
-                pygame.draw.line(surf, color, (px, base), (px, py), 1)
+                graph_line(surf, color, (px, base), (px, py), 3)
                 if not dense:
-                    pygame.draw.circle(surf, color, (px, py), 3)
+                    point_marker(surf, color, (px, py), 3)
         elif self.mode == "d":
             for px, py in pts:
-                pygame.draw.circle(surf, color, (px, py), 3 if len(pts) < 150 else 1)
+                point_marker(surf, color, (px, py), 3 if len(pts) < 150 else 1)
         else:
-            pygame.draw.aalines(surf, color, False, pts)
+            curve_line(surf, color, False, pts)
 
     def _draw_process(self, surf):
         u = self.u
@@ -588,13 +588,13 @@ class DemoScreen(Screen):
         """Отмечает на графике процесса то место, где сейчас точка на фазовой плоскости."""
         n = int(self.cursor)
         if self.mode == "d":
-            pygame.draw.circle(surf, theme.CURSOR, (ax.px(n), ax.py(self.ys[n])), 7, 2)
+            point_marker(surf, theme.CURSOR, (ax.px(n), ax.py(self.ys[n])), 7, 2)
         else:
             u = (self.cursor - n) * math.pi
             v = self.ys[n] * nm.shape(u, self.params.delta)
             px = ax.px(self.cursor)
-            pygame.draw.line(surf, theme.CURSOR, (px, ax.rect.y), (px, ax.rect.bottom), 1)
-            pygame.draw.circle(surf, theme.CURSOR, (px, ax.py(v)), 5)
+            graph_line(surf, theme.CURSOR, (px, ax.rect.y), (px, ax.rect.bottom), 1)
+            point_marker(surf, theme.CURSOR, (px, ax.py(v)), 5)
 
     def _draw_shift_arrow(self, surf, ax, lag):
         if lag < 0.5:
@@ -603,7 +603,7 @@ class DemoScreen(Screen):
         xa = ax.rect.x + 10
         xb = xa + (ax.px(lag / self.unit) - ax.px(0))
         xb = min(xb, ax.rect.right - 10)
-        pygame.draw.line(surf, theme.SHIFTED, (xa, y), (xb, y), 2)
+        graph_line(surf, theme.SHIFTED, (xa, y), (xb, y), 2)
         pygame.draw.polygon(surf, theme.SHIFTED, [(xa, y), (xa + 7, y - 4), (xa + 7, y + 4)])
 
     def _draw_correlation(self, surf):
@@ -633,14 +633,14 @@ class DemoScreen(Screen):
             if grow > 0:
                 bar(lag, self._value(lag) * grow, theme.BAR_CURRENT)
             px = ax.px(self.shift / self.unit)
-            pygame.draw.line(surf, theme.SHIFTED, (px, ax.rect.y), (px, ax.rect.bottom), 1)
+            graph_line(surf, theme.SHIFTED, (px, ax.rect.y), (px, ax.rect.bottom), 1)
 
         # теория
         if self.mode == "d":
             pts = [ax.point(k, self.theory[k]) for k in self.lags]
             dashed_polyline(surf, theme.THEORY, pts, width=2)
             for p in pts:
-                pygame.draw.circle(surf, theme.THEORY, p, 3)
+                point_marker(surf, theme.THEORY, p, 3)
         else:
             pts = [ax.point(j / S, self.theory[j]) for j in range(len(self.theory))]
             dashed_polyline(surf, theme.THEORY, pts, width=2)

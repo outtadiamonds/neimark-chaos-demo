@@ -253,7 +253,8 @@ def items(app, name):
     if name == app.active:
         if getattr(screen, "tabs_rect", None) is not None:
             out.append(Item(f"{name}.@tabs", app.tabs))
-        out.append(Item(f"{name}.@lang", app.lang_button))
+        if app.lang_button.visible:
+            out.append(Item(f"{name}.@lang", app.lang_button))
     for i, entry in enumerate(getattr(screen, "labels", [])):
         out.append(Item(f"{name}.label.{entry[0]}", screen=screen, index=i))
     for graph, (target, title) in getattr(screen, "GRAPHS", {}).items():

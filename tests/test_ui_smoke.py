@@ -55,9 +55,12 @@ class UiSmokeTest(unittest.TestCase):
         app = self.app
         for name in ("menu", "motion", "theory", "authors", "demo"):
             app.show(name)
+            self.assertEqual(app.lang_button.visible, name == "menu")
+            self.assertEqual(app.bw_button.visible, name == "menu")
             for lang in ("ru", "en"):
                 i18n.set_lang(lang)
                 frames(app, 2)
+        app.show("menu")
         click(app, app.lang_button.rect.center)
         self.assertEqual(i18n.lang(), "ru")
 
@@ -337,8 +340,8 @@ class UiSmokeTest(unittest.TestCase):
         dev.modal = None
         dev._undo()
         dev._undo()
-        self.assertEqual(config.motion.track, 40)
-        self.assertEqual(motion.TRACK, 40)
+        self.assertEqual(config.motion.track, 20)
+        self.assertEqual(motion.TRACK, 20)
         app.show("demo")
         frames(app, 3)
         dev.toggle()
@@ -382,6 +385,44 @@ class UiSmokeTest(unittest.TestCase):
             packaging.export_show(os.path.join(out, packaging.DEV_NAME), {"design.json": b"{}"})  # повторно — поверх старой
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_miniplots_survive_fullscreen_sizes(self):
+        app = self.app
+        app.show("demo")
+        for size in ((1024, 640), (1920, 1080), (1920, 1200), (2560, 1600), (3840, 2160)):
+            app.screen = pygame.display.set_mode(size, pygame.RESIZABLE)
+            app._layout()
+            demo = app.screens["demo"]
+            self.assertTrue(demo.plane.visible)
+            self.assertTrue(demo.portrait.visible)
+            for widget in (demo.plane, demo.portrait):
+                self.assertGreater(widget.rect.height, 30)
+                self.assertTrue(demo.panel.contains(widget.rect))
+                self.assertLessEqual(widget.rect.bottom, demo.s_n.rect.top)
+        app._handle(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_F11, mod=0))
+        self.assertTrue(app.screens["demo"].plane.visible)
+        app._handle(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_F11, mod=0))
+        self.assertTrue(app.screens["demo"].portrait.visible)
+
+    def test_collapsible_panel(self):
+        app = self.app
+        for name in ("motion", "demo"):
+            app.show(name)
+            screen = app.screens[name]
+            axes = screen.time_ax if name == "motion" else screen.axes[0]
+            original = axes.rect.copy()
+            state = screen.motion if name == "motion" else screen.ys
+            click(app, app.panel_toggle.rect.center)
+            self.assertFalse(app.panel_open)
+            axes = screen.time_ax if name == "motion" else screen.axes[0]
+            self.assertGreater(axes.rect.width, original.width)
+            self.assertIs(state, screen.motion if name == "motion" else screen.ys)
+            frames(app, 2)
+            click(app, app.panel_toggle.rect.center)
+            self.assertTrue(app.panel_open)
+            axes = screen.time_ax if name == "motion" else screen.axes[0]
+            self.assertEqual(axes.rect, original)
+            self.assertLess(axes.rect.right, screen.panel.left)
 
     def test_resize(self):
         app = self.app

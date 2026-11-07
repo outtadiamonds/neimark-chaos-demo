@@ -1,0 +1,16 @@
+{
+ "widgets": {
+  "motion.twin_sel": {
+   "fs": 1.21
+  }
+ },
+ "colors": {},
+ "texts": {
+  "ru": {},
+  "en": {}
+ },
+ "font": {
+  "scale": 1.0,
+  "serif": false
+ }
+}

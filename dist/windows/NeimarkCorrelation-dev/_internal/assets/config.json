@@ -4,17 +4,17 @@
   "history": 2000
  },
  "motion": {
-  "phase_trail": 24,
+  "phase_trail": 20,
   "time_window": 8,
   "curve_samples": 40,
   "flash_decay": 1.8,
-  "track": 40,
+  "track": 20,
   "twins": [
    0.01,
    1e-05,
    1e-08
   ],
-  "twin_default": 1,
+  "twin_default": 0,
   "speed": 1.0,
   "speed_min": 0.25,
   "speed_max": 100.0,

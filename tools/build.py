@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import time
+import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NAME = "NeimarkCorrelation"
@@ -42,13 +43,42 @@ def theory():
 def windows(check):
     if sys.platform != "win32":
         sys.exit("Windows-версию можно собрать только на Windows (PyInstaller не собирает под другую ОС).")
-    for path in (os.path.join("dist", "windows"), os.path.join("build", "work-windows")):
-        shutil.rmtree(os.path.join(ROOT, path), ignore_errors=True)
-    run([PY, "-m", "PyInstaller", "--noconfirm", "--clean", "--log-level", "WARN",
-         "--distpath", os.path.join("dist", "windows"), "--workpath", os.path.join("build", "work-windows"),
-         os.path.join("build", "neimark.spec")])
-    # обычная версия и версия разработчика (с конструктором F12), обе — в zip
-    run([PY, os.path.join("tools", "package.py"), "windows", os.path.join("dist", "windows", NAME), "dist"])
+    # Проверяем блокировки до каких-либо изменений в существующих сборках.
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                  ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    paths = []
+    target = os.path.join(ROOT, "dist", "windows")
+    for base, _, files in os.walk(target):
+        paths.extend(os.path.join(base, name) for name in files)
+    for name in (NAME, NAME + "-dev"):
+        archive = os.path.join(ROOT, "dist", name + "-windows-x64.zip")
+        if os.path.isfile(archive):
+            paths.append(archive)
+    for path in paths:
+        handle = kernel.CreateFileW(path, 0x80000000, 0, None, 3, 0, None)
+        if handle == ctypes.c_void_p(-1).value:
+            sys.exit("Сборка остановлена до изменения файлов: файл занят или недоступен. "
+                     "Закройте программу и открытые ZIP-архивы: " + path)
+        kernel.CloseHandle(handle)
+    os.makedirs(os.path.join(ROOT, "build"), exist_ok=True)
+    # Компиляция и упаковка сначала во временную папку. Ошибка оставляет старую версию целой.
+    with tempfile.TemporaryDirectory(prefix="package-", dir=os.path.join(ROOT, "build")) as stage:
+        apps = os.path.join(stage, "windows")
+        run([PY, "-m", "PyInstaller", "--noconfirm", "--clean", "--log-level", "WARN",
+             "--distpath", apps, "--workpath", os.path.join(stage, "work"),
+             os.path.join(ROOT, "build", "neimark.spec")])
+        run([PY, os.path.join("tools", "package.py"), "windows", os.path.join(apps, NAME), stage])
+        # Windows может держать сам каталог открытым в Проводнике.
+        # Не переименовываем каталог: переносим только готовые файлы поверх.
+        shutil.copytree(apps, target, dirs_exist_ok=True)
+        for name in (NAME, NAME + "-dev"):
+            archive = name + "-windows-x64.zip"
+            os.replace(os.path.join(stage, archive), os.path.join(ROOT, "dist", archive))
     if check:
         exe = os.path.join(ROOT, "dist", "windows", NAME, NAME + ".exe")
         shot = os.path.join(ROOT, "build", "check-windows.png")

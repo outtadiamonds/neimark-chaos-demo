@@ -9,7 +9,7 @@ import pygame
 from .. import config, theme
 from ..i18n import t
 from ..physics import neimark as nm
-from .plot import Axes, dashed_polyline
+from .plot import Axes, graph_line, graph_lines, dashed_polyline
 from .widgets import Widget, draw_text
 
 GAMMA_MIN = GAMMA_MAX = 0.0  # пределы γ из assets/config.json (раздел "demo"), см. refresh()
@@ -78,7 +78,7 @@ class ParamPlane(Widget):
         pygame.draw.polygon(surf, theme.REGION, region)
         # нормальный режим h < a — бежевая часть области слева от h/a = 1
         pygame.draw.polygon(surf, theme.REGION_NORMAL, [ax.point(0, 1), ax.point(1, 2), ax.point(1, 1)])
-        pygame.draw.lines(surf, theme.AXIS, True, region, 1)
+        graph_lines(surf, theme.AXIS, True, region, 1)
         ax.frame(surf, fs - 1, xticks=3, yticks=3, zero=False, yfmt=lambda v: f"{v:g}", xfmt=lambda v: f"{v:g}")
         draw_text(surf, t("g_gamma"), (ax.rect.x + 5, ax.rect.y - 2), fs + 2, theme.FG, bold=True)
         draw_text(surf, t("g_ha"), (ax.rect.right, ax.rect.bottom - 3), fs, theme.FG, anchor="bottomright", bold=True)
