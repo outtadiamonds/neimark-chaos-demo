@@ -2,6 +2,7 @@
 import re
 
 LANGS = ("ru", "en")
+
 _lang = "ru"
 OVERRIDES = {"ru": {}, "en": {}}  # надписи, изменённые в режиме разработчика (design.py)
 TRACE = None  # в режиме разработчика: [(готовый текст, ключ)] за кадр — чтобы знать, какой ключ где нарисован
@@ -119,7 +120,7 @@ STRINGS = {
     "lg_kick_short": ("удар", "kick"),
     "lg_section_short": ("yₙ — скорость при x = 0", "yₙ — velocity at x = 0"),
     "lg_twin": ("близкая траектория v₀ + ε", "nearby trajectory v₀ + ε"),
-    "y_star": ("y* — бифуркация", "y* — bifurcation"),
+    "y_star": ("y* — порог ветвления", "y* — branch threshold"),
     "sec_twin": ("Близкая траектория: v₀ + ε, ε =", "Nearby trajectory: v₀ + ε, ε ="),
     "twin_off": ("Без ε", "No ε"),
     "m_twins": ("Две траектории: v₀ и v₀ + ε", "Two trajectories: v₀ and v₀ + ε"),
@@ -157,6 +158,19 @@ STRINGS = {
     "to_be_added": ("будет добавлено", "to be added"),
 }
 
+
+STRINGS.update({
+    'explain_mode': ('Объяснение', 'Explain'),
+    'fast_mode': ('Быстро', 'Fast'),
+    'loupe': ('Лупа', 'Magnify'),
+    'loupe_active': ('Лупа ✓', 'Magnify ✓'),
+    'whole_process': ('Весь процесс', 'Whole process'),
+    'explain_shift': ('Сдвигаем копию процесса', 'Shifting the copy'),
+    'explain_pair': ('Пара n = {n}: сравниваем отклонения', 'Pair n = {n}: compare deviations'),
+    'explain_product': ('Пара n = {n}: вклад = {value}', 'Pair n = {n}: product = {value}'),
+    'explain_full': ('По всей выборке: {n} пар → {value}', 'Full sample: {n} pairs → {value}'),
+    'motion_scale': ('Масштаб пространства: ×{scale}', 'Spatial scale: ×{scale}'),
+})
 
 def set_lang(lang):
     global _lang

@@ -76,6 +76,8 @@ class UiSmokeTest(unittest.TestCase):
         app = self.app
         app.show("demo")
         demo = app.screens["demo"]
+        demo.explain_sel.value = "fast"
+        demo._set_explain("fast")
         click(app, demo.b_step.rect.center)
         frames(app, 30)
         self.assertGreaterEqual(demo.built, 1)

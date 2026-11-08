@@ -20,6 +20,7 @@ from .. import resources as res
 from .. import theme
 from ..i18n import t
 from ..physics import neimark as nm
+from ..ui import plot
 from ..ui.plot import Axes, point_marker, graph_line, graph_lines, curve_line, fading_trail, trail_color, boxed_text, dashed_polyline, label_box
 from ..ui.widgets import Button, Segmented, Slider, draw_text, fit_text, remember_text
 from .base import Screen
@@ -125,6 +126,9 @@ class MotionScreen(Screen):
         """Начать опыт заново: движение с t = 0 и вторая траектория."""
         self.motion = nm.Motion(self.params, self.v0)
         self.ext = max(1.5, nm.A * 1.4, abs(self.v0) * 1.5)
+        self.initial_ext = self.ext
+        self.motion.LIMIT = config.motion.escape_scale * self.initial_ext
+        self._sync_sliders()
         self.flash = 0.0
         self._restart_twin()
 
@@ -132,6 +136,8 @@ class MotionScreen(Screen):
         """Вторая траектория: копия текущего состояния, скорость больше на ε."""
         eps = TWINS.get(self.twin_key)
         self.twin = nm.Motion.near(self.motion, eps) if eps else None
+        if self.twin:
+            self.twin.LIMIT = self.motion.LIMIT
         self.twin_start = self.motion.crossings
         self.split_n = None   # номер yₙ, начиная с которого траектории разошлись
         self.track = []       # (n, yₙ, yₙ второй траектории или None)
@@ -157,17 +163,49 @@ class MotionScreen(Screen):
     def _on_gamma(self, v, final):
         self._custom()
         self.params = nm.Params(v, self.params.h)
-        self._reset()
+        self._bounded_params()
 
     def _on_h(self, v, final):
         self._custom()
         self.params = nm.Params(self.params.gamma, v)
-        self._reset()
+        self._bounded_params()
 
     def _on_v0(self, v, final):
         self._custom()
         self.v0 = v
+        self._bounded_params()
+
+    def _bounded_params(self):
+        # При gamma > 4 область gamma-1 <= h <= 1+sqrt(gamma) пуста.
+        lo, hi = self._gamma_range()
+        gamma = min(hi, max(lo, self.params.gamma))
+        p = nm.Params(gamma, self.params.h)
+        lower, upper = p.h_range()
+        # Строго внутрь: на отталкивающей границе округление усиливается
+        # отображением и способно вызвать численный уход из инвариантного отрезка.
+        margin = config.motion.parameter_margin
+        inset = (upper-lower)*margin
+        self.params = nm.Params(gamma, min(upper-inset, max(lower+inset, p.h)))
+        inset_y = (nm.A-self.params.lower)*margin
+        self.v0 = min(nm.A-inset_y, max(self.params.lower+inset_y, self.v0))
         self._reset()
+
+    @staticmethod
+    def _gamma_range():
+        margin = config.motion.parameter_margin
+        cap = 4.0-margin
+        lo = min(cap, max(1.0+margin, config.motion.gamma_min))
+        return lo, max(lo, min(cap, config.motion.gamma_max))
+
+    def _sync_sliders(self):
+        self.s_gamma.set_range(*self._gamma_range())
+        lower, upper = self.params.h_range()
+        # Сценарий free сохраняет h=0; любое ручное изменение возвращает в область.
+        self.s_h.set_range(0.0 if self.scenario == "free" else lower, upper)
+        self.s_v0.set_range(self.params.lower, nm.A)
+        self.s_gamma.value = self.params.gamma
+        self.s_h.value = self.params.h
+        self.s_v0.value = self.v0
 
     def _on_speed(self, v, final):
         self.speed = v
@@ -240,12 +278,12 @@ class MotionScreen(Screen):
                 if a and b and b.after is not None and a.hit != b.hit:
                     self.split_n = n + 1
                     break
-        for n in range(max(first, last - TRACK), last + 1):
+        for n in range(max(first, last - TRACK + 1), last + 1):
             a = self._half(mo, n)
             b = self._half(tw, n) if tw else None
             if a:
                 self.track.append((n, a.y, b.y if b else None))
-        del self.track[:-TRACK - 1]
+        del self.track[:-TRACK]
 
     def update(self, dt):
         if self.running:
@@ -260,7 +298,7 @@ class MotionScreen(Screen):
             peak = max(peak, abs(x), abs(v))
             for half in mo.halves[-PHASE_TRAIL:]:
                 peak = max(peak, abs(half.y), abs(half.before or 0.0))
-        self.ext = max(self.ext, math.ceil(min(peak, nm.Motion.LIMIT) * 1.15 * 4) / 4)
+        self.ext = max(self.ext, math.ceil(min(peak, self.motion.LIMIT) * 1.15 * 4) / 4)
 
     def handle(self, event):
         if super().handle(event):
@@ -367,13 +405,14 @@ class MotionScreen(Screen):
         gx = int(u * 4.5)
         side2 = min(h2, int(lw * 0.4))
         self.map_title = (lx, y)
-        self.map_ax = Axes((lx, y + title_h, side2, h2), (-1, 1), (-1, 1))
+        data_top = y + title_h + int(u * 1.5)
+        data_height = max(30, h2 - int(u * 3.4))
+        self.map_ax = Axes((lx, data_top, side2, data_height), (-1, 1), (-1, 1))
         x2 = lx + side2 + gx
         w2 = lx + lw - x2
         self.twin_title = (x2, y)
         # Один высокий график; подпись и легенда вынесены за область данных.
-        self.seq_ax = Axes((x2, y + title_h + int(u*1.5), w2,
-                            h2 - int(u*3.4)), (0, 1), (-1, 1))
+        self.seq_ax = Axes((x2, data_top, w2, data_height), (0, 1), (-1, 1))
 
     # ---------- рисование ----------
 
@@ -396,6 +435,7 @@ class MotionScreen(Screen):
         self._draw_projection(surf)
         self._draw_map(surf)
         self._draw_twins(surf)
+        self._draw_sequence_projection(surf)
         if self.motion.escaped:
             self._draw_message(surf, t("escaped"), self.time_ax.rect)
 
@@ -458,12 +498,18 @@ class MotionScreen(Screen):
 
     # --- 1. осциллятор: стенка, пружина, груз, стрелка скорости ---
 
+    def _oscillator_sizes(self):
+        zoom = self.initial_ext / self.ext
+        size = max(6, round(min(self.u * 1.7, self.osc_rect.height * 0.4) * zoom))
+        spring = max(2.0, min(self.u * 1.7, self.osc_rect.height * 0.4) * 0.35 * zoom)
+        return size, spring
+
     def _draw_oscillator(self, surf):
         u = self.u
         r = self.osc_rect
         draw_text(surf, t("m_osc"), self.osc_title, int(u * 1.0), bold=True)
         items = [("rect", theme.CURSOR, t("lg_now_short")), ("rect", theme.NEGATIVE, t("lg_kick_short")),
-                 ("rect", theme.SHIFTED, t("lg_section_short"))]
+                 ("rect", theme.PROCESS, t("lg_section_short"))]
         if self.twin:
             items.append(("rect", theme.TWIN, t("lg_twin")))
         draw_legend(surf, items, r.right, self.osc_title[1], int(u * 0.85))
@@ -472,7 +518,9 @@ class MotionScreen(Screen):
         cy = r.y + int(r.height * 0.45)
         left, right = r.x + int(u * 2), r.right - int(u * 1)
         scale = (right - left) * 0.38 / self.ext
-        size = int(min(u * 1.7, r.height * 0.4))
+        size, spring = self._oscillator_sizes()
+        draw_text(surf, t("motion_scale", scale=f"{self.ext / self.initial_ext:.2f}"),
+                  (r.x, r.bottom), int(u * 0.85), theme.MUTED, anchor="bottomleft")
         rail = min(cy + int(u * 1.6), r.bottom - int(u * 1.2))
         graph_line(surf, theme.AXIS, (left, rail), (right, rail), 2)
         fs = int(u * 0.85)
@@ -496,7 +544,7 @@ class MotionScreen(Screen):
         coils = 18
         span = end - start - 16
         for i in range(1, coils):
-            pts.append((start + 8 + span * i / coils, cy + (size * 0.35 if i % 2 else -size * 0.35)))
+            pts.append((start + 8 + span * i / coils, cy + (spring if i % 2 else -spring)))
         pts += [(end - 8, cy), (end, cy)]
         graph_lines(surf, theme.AXIS, False, pts, 2)
         # груз второй траектории — контуром (пока траектории совпадают, он скрыт под основным)
@@ -506,7 +554,7 @@ class MotionScreen(Screen):
                              border_radius=7)
         # груз; при ударе вспыхивает красным
         hit = self.flash > 0.15
-        color = theme.NEGATIVE if hit else theme.SHIFTED
+        color = theme.NEGATIVE if hit else theme.PROCESS
         pygame.draw.rect(surf, color, (bx - size / 2, cy - size / 2, size, size), border_radius=6)
         # стрелка скорости над грузом
         ay = cy - size / 2 - int(u * 0.6)
@@ -562,7 +610,7 @@ class MotionScreen(Screen):
         if self.show_sections:
             for half in halves:
                 age = (mo.t - half.t0) / math.pi
-                point_marker(surf, trail_color(theme.SHIFTED, age, PHASE_TRAIL), ax.point(0, half.y), 2)
+                point_marker(surf, trail_color(theme.PROCESS, age, PHASE_TRAIL), ax.point(0, half.y), 2)
         if tw and not tw.escaped:
             point_marker(surf, theme.TWIN, ax.point(*tw.state()), 8, 2)
         point_marker(surf, theme.CURSOR, ax.point(*mo.state()), 6)
@@ -590,7 +638,7 @@ class MotionScreen(Screen):
                 graph_line(surf, theme.NEGATIVE if marks else color, ax.point(tx, half.before),
                                  ax.point(tx, half.after), 2 if marks else 1)
             if marks and self.show_sections:
-                point_marker(surf, theme.SHIFTED, ax.point(half.t0 / math.pi, half.y), 3)
+                point_marker(surf, theme.PROCESS, ax.point(half.t0 / math.pi, half.y), 3)
 
     def _draw_timeline(self, surf):
         u = self.u
@@ -641,16 +689,16 @@ class MotionScreen(Screen):
         graph_line(surf, theme.AXIS, (ax.px(0), ax.rect.y), (ax.px(0), ax.rect.bottom))
         br = p.branch
         # правая ветвь (удара нет) и левая (удар), без вертикального соединения в разрыве
-        graph_line(surf, theme.SHIFTED, ax.point(br, -p.s * br), ax.point(e, -p.s * e), 3)
+        graph_line(surf, theme.PROCESS, ax.point(br, -p.s * br), ax.point(e, -p.s * e), 3)
         if p.h > 0:
-            graph_line(surf, theme.SHIFTED, ax.point(-e, p.s * e - p.h), ax.point(br, nm.A - p.h), 3)
+            graph_line(surf, theme.PROCESS, ax.point(-e, p.s * e - p.h), ax.point(br, nm.A - p.h), 3)
         else:
-            graph_line(surf, theme.SHIFTED, ax.point(-e, p.s * e), ax.point(br, nm.A), 3)
+            graph_line(surf, theme.PROCESS, ax.point(-e, p.s * e), ax.point(br, nm.A), 3)
         bx = ax.px(br)
         dashed_polyline(surf, theme.CURSOR, [(bx, ax.rect.y), (bx, ax.rect.bottom)], dash=4, gap=4, width=1)
-        # Точки живут столько же, сколько фазовый след: последние PHASE_TRAIL полуколебаний.
+        # Последние PHASE_TRAIL полуколебаний, но не больше текущего TRACK.
         # Возраст считается по времени, поэтому исчезновение плавное даже между прохождениями x=0.
-        pairs = self.motion.pairs()[-PHASE_TRAIL:]
+        pairs = self.motion.pairs()[-min(PHASE_TRAIL, TRACK):]
         n = len(pairs)
         for i, (a, b) in enumerate(pairs):
             age = n - 1 - i + self.motion.s / math.pi
@@ -663,9 +711,9 @@ class MotionScreen(Screen):
         if pairs:
             point_marker(surf, theme.CURSOR, ax.point(*pairs[-1]), 8, 2)
         if p.h > 0:
-            point_marker(surf, theme.SHIFTED, ax.point(br, nm.A - p.h), 4)
+            point_marker(surf, theme.PROCESS, ax.point(br, nm.A - p.h), 4)
             point_marker(surf, theme.BG, ax.point(br, nm.A), 4)
-            point_marker(surf, theme.SHIFTED, ax.point(br, nm.A), 4, 2)
+            point_marker(surf, theme.PROCESS, ax.point(br, nm.A), 4, 2)
         surf.set_clip(None)
         draw_text(surf, t("g_yn1"), (ax.rect.x + 5, ax.rect.y), int(u * 0.95), theme.FG, bold=True)
         draw_text(surf, t("y_star"), (bx + 4, ax.rect.bottom - 4), int(u * 0.85), theme.CURSOR, anchor="bottomleft")
@@ -675,37 +723,48 @@ class MotionScreen(Screen):
     def _draw_twins(self, surf):
         u = self.u
         fs = int(u * 0.85)
-        ax, p = self.seq_ax, self.params
+        ax = self.seq_ax
+        del self.track[:-TRACK]
         last = self.motion.crossings
         first = max(0, last - TRACK + 1)
         ax.x0, ax.x1 = first - 0.5, first + TRACK - 0.5
-        lim = max(1.25, min(self.ext, 3.0))
-        ax.y0, ax.y1 = (-lim, lim) if not p.is_chaotic() else (p.lower-0.25, nm.A+0.25)
+        ax.y0, ax.y1 = -self.ext, self.ext
         self._title(surf, "m_twins" if self.twin else "m_seq", self.twin_title, ax.rect.right)
         ax.frame(surf, fs, xticks=5, yticks=3, xlabel=t("g_n"))
         rows = [(n,a,b) for n,a,b in self.track if first <= n < first + TRACK]
-        main = [ax.point(n, ax.clip_y(a)) for n,a,_ in rows]
-        twin = [ax.point(n, ax.clip_y(b)) for n,_,b in rows if b is not None]
+        main = [(n, a) for n, a, _ in rows]
+        twin = [(n, b) for n, _, b in rows if b is not None]
         surf.set_clip(ax.rect)
-        if len(twin)>1:
-            dashed_polyline(surf, theme.TWIN, twin, dash=6, gap=4)
-        if len(main)>1:
-            curve_line(surf, theme.PROCESS, False, main)
-        for pt in main:
-            point_marker(surf, theme.PROCESS, pt, 2)
-        for pt in twin:
-            point_marker(surf, theme.TWIN, pt, 3, 1)
-        if main:
-            point_marker(surf, theme.CURSOR, main[-1], 5)
+        plot.point_process(surf, ax, main, theme.PROCESS, stems=True,
+                           highlight=main[-1] if main else None)
+        if self.twin:
+            plot.point_process(surf, ax, twin, theme.TWIN, secondary=True, stems=True,
+                               highlight=twin[-1] if twin else None)
         surf.set_clip(None)
         draw_text(surf, t("g_yn"), (ax.rect.x+5,ax.rect.y), fs, bold=True)
         if self.twin:
-            draw_legend(surf, [("rect",theme.PROCESS,t("twin_main_legend")),
-                              ("dash",theme.TWIN,t("twin_second_legend"))],
+            draw_legend(surf, [("circle",theme.PROCESS,t("twin_main_legend")),
+                              ("diamond",theme.TWIN,t("twin_second_legend"))],
                         ax.rect.right, ax.rect.y-int(u*1.4), fs)
             text = t("twin_split_short", n=self.split_n-self.twin_start) if self.split_n is not None else t("twin_same_short")
             draw_text(surf, text, (ax.rect.x, ax.rect.bottom+int(u*1.7)),
                       fit_text(text,fs,ax.rect.width), theme.NEGATIVE if self.split_n else theme.MUTED)
+
+    def _draw_sequence_projection(self, surf):
+        """Последняя пара отображения и тот же отсчёт последовательности."""
+        if not self.show_projection or not self.motion.crossings:
+            return
+        pairs = self.motion.pairs()
+        if not pairs:
+            return
+        a, b = pairs[-1]
+        n = self.motion.crossings
+        ma, sa = self.map_ax, self.seq_ax
+        if not (ma.x0 <= a <= ma.x1 and ma.y0 <= b <= ma.y1
+                and sa.x0 <= n <= sa.x1 and sa.y0 <= b <= sa.y1):
+            return
+        dashed_polyline(surf, theme.PROCESS, [ma.point(a, b), sa.point(n, b)],
+                        dash=5, gap=4, width=1)
 
     # ---------- для автоматической проверки ----------
 

@@ -48,7 +48,7 @@ class PhasePortrait(Widget):
 
     def draw(self, surf, pos, start):
         """pos — положение курсора в полупериодах (дробное), start — с какого номера рисовать."""
-        if not self.visible or self.params is None:
+        if not self.visible or self.params is None or len(self.ys) < 2:
             return
         r = self.rect
         fs = self.font_size
@@ -61,6 +61,10 @@ class PhasePortrait(Widget):
                         dash=4, gap=3, width=1)
         draw_text(surf, t("g_a"), (ax + r.width * 0.13, ay), fs, theme.NEGATIVE, anchor="midleft")
 
+        # Лупа/перетаскивание могут сменить окно до очередного update курсора.
+        # Курсор сразу переносится в новое окно, чтобы цикл не оказался пустым.
+        start = max(0,min(int(start),len(self.ys)-2))
+        pos = max(float(start), min(float(pos),len(self.ys)-1.000001))
         n_now = min(int(pos), len(self.ys) - 2)
         frac = pos - n_now
         first = max(start, n_now - TRAIL)
@@ -83,6 +87,6 @@ class PhasePortrait(Widget):
                 if z >= nm.A:  # удар: вертикальный скачок вниз на оси x = 0
                     graph_line(surf, theme.NEGATIVE, self._pt(0, z), self._pt(0, self.ys[n + 1]), 2)
         for n in range(first, n_now + 1):
-            point_marker(surf, theme.SHIFTED, self._pt(0, self.ys[n]), 3)
+            point_marker(surf, theme.PROCESS, self._pt(0, self.ys[n]), 3)
         point_marker(surf, theme.CURSOR, pts[-1], 5)
         surf.set_clip(None)

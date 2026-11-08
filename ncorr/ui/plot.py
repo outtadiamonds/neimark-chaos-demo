@@ -5,14 +5,14 @@ import pygame
 import pygame.gfxdraw
 
 from .. import resources as res
-from .. import theme
+from .. import theme, config
 from .widgets import draw_text, remember_text
 
 
 def stroke_width(surf, role="curve"):
     """Единая шкала толщин для доски: сетка < оси < данные."""
     scale = max(1.0, min(1.5, surf.get_height() / 1200))
-    return max(1, round({"grid": 1, "axis": 1.5, "curve": 2}[role] * scale))
+    return max(1, round({"grid": 1, "axis": 2.0, "curve": 2.6}[role] * scale))
 
 
 def graph_line(surf, color, start, end, width=1):
@@ -201,3 +201,36 @@ def point_marker(surf, color, center, radius, width=0):
     x, y = round(center[0]), round(center[1])
     pygame.draw.circle(surf, color, (x,y), r, min(r, max(3, width)) if width else 0)
     pygame.gfxdraw.aacircle(surf, x, y, r, color)
+
+
+def point_process(surf, ax, points, color, secondary=False, stems=True,
+                  highlight=None, marker_radius=None):
+    """Общий точечный процесс на обеих вкладках: круги / ромбы и стержни от нуля.
+
+    points и highlight заданы в координатах данных. Обычные маркеры малы,
+    вблизи нуля дополнительно уменьшаются. Только текущая точка имеет кольцо.
+    """
+    points = list(points)
+    if not points:
+        return
+    scale = max(1.0, min(1.4, surf.get_height()/1200))
+    radius = marker_radius if marker_radius is not None else config.window.process_marker_radius*scale
+    zero = ax.py(0)
+    for x,y in points:
+        px,py = ax.point(x,y)
+        if not (ax.rect.left-radius <= px <= ax.rect.right+radius):
+            continue
+        if stems:
+            graph_line(surf,color,(px,zero),(px,py))
+        # Небольшие значения не должны превращаться в кружок по обе стороны нуля.
+        r = max(1, min(round(radius), int(abs(py-zero)*0.65)))
+        if secondary:
+            vertices = [(px,py-r),(px+r,py),(px,py+r),(px-r,py)]
+            pygame.gfxdraw.filled_polygon(surf, [(round(a),round(b)) for a,b in vertices], color)
+            pygame.draw.aalines(surf,color,True,vertices)
+        else:
+            center = (round(px),round(py))
+            pygame.gfxdraw.filled_circle(surf,*center,r,color)
+            pygame.gfxdraw.aacircle(surf,*center,r,color)
+    if highlight is not None:
+        point_marker(surf,color,ax.point(*highlight),max(8,radius+4),2)

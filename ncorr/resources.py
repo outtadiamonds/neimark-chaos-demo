@@ -32,7 +32,8 @@ def clear_fonts():
 
 
 def font(size, bold=False, serif=False, italic=False):
-    size = max(8, int(size * FONT["scale"]))
+    from . import config
+    size = max(8, int(size * FONT["scale"] * config.window.font_scale))
     serif = serif or FONT["serif"]
     key = (size, bold, serif, italic)
     if key not in _fonts:

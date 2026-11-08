@@ -4,6 +4,8 @@
   "history": 2000
  },
  "motion": {
+  "parameter_margin": 1e-06,
+  "escape_scale": 8.0,
   "phase_trail": 20,
   "time_window": 8,
   "curve_samples": 40,
@@ -18,7 +20,7 @@
   "speed": 1.0,
   "speed_min": 0.25,
   "speed_max": 100.0,
-  "gamma_min": 1.0,
+  "gamma_min": 1.05,
   "gamma_max": 4.0,
   "h_min": 0.0,
   "h_max": 3.5,
@@ -41,7 +43,7 @@
   "c_steps": 48,
   "cont_half": 20000,
   "speed": 1.0,
-  "speed_min": 0.25,
+  "speed_min": 0.05,
   "speed_max": 4.0,
   "shift_end": 0.45,
   "product_end": 0.7,
@@ -51,9 +53,15 @@
   "cursor_span": 40,
   "seed": 1,
   "gamma_min": 1.05,
-  "gamma_max": 4.0
+  "gamma_max": 4.0,
+  "preview_pairs": 6,
+  "explain_shift": 3.0,
+  "explain_pair": 2.5,
+  "explain_average": 3.0
  },
  "window": {
+  "process_marker_radius": 3.0,
+  "font_scale": 1.2,
   "min_width": 1024,
   "min_height": 640,
   "fps": 60
@@ -61,6 +69,8 @@
  "_описание": {
   "physics.limit": "|x| или |v| больше этого — движение ушло на бесконечность, опыт останавливается",
   "physics.history": "сколько последних полупериодов движения хранить (для графиков и отображения)",
+  "motion.parameter_margin": "отступ ручных параметров от неустойчивых границ (доля диапазона)",
+  "motion.escape_scale": "остановка раскачки: во сколько раз превышен начальный масштаб",
   "motion.phase_trail": "сколько последних полупериодов видно в следе на фазовой плоскости",
   "motion.time_window": "ширина окна графика v(t), в полупериодах",
   "motion.curve_samples": "точек кривой на один полупериод (гладкость линий)",
@@ -103,6 +113,12 @@
   "demo.seed": "номер случайной начальной точки ряда (другой номер — другая реализация)",
   "demo.gamma_min": "наименьшее γ на плоскости параметров и ползунке",
   "demo.gamma_max": "наибольшее γ на плоскости параметров и ползунке",
+  "demo.preview_pairs": "сколько пар пошагово разобрать перед усреднением по всей выборке",
+  "demo.explain_shift": "секунд на сдвиг копии при скорости ×1",
+  "demo.explain_pair": "секунд на выделение пары и отдельно на её произведение при ×1",
+  "demo.explain_average": "секунд на итоговое усреднение и рост столбика при ×1",
+  "window.process_marker_radius": "радиус обычных точек процесса (без скрытого увеличения)",
+  "window.font_scale": "общий множитель шрифтов для большой аудитории",
   "window.min_width": "наименьшая ширина окна при запуске, px",
   "window.min_height": "наименьшая высота окна при запуске, px",
   "window.fps": "кадров в секунду"

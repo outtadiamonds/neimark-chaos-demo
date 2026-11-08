@@ -27,9 +27,9 @@ def draw_text(surf, text, pos, size, color=None, anchor="topleft", bold=False, s
     return rect
 
 
-def fit_text(text, size, max_width, **kw):
+def fit_text(text, size, max_width, min_size=9, **kw):
     """Наибольший размер шрифта <= size, при котором текст влезает в max_width."""
-    while size > 9 and res.font(size, **kw).size(text)[0] > max_width:
+    while size > min_size and res.font(size, **kw).size(text)[0] > max_width:
         size -= 1
     return size
 
@@ -182,8 +182,13 @@ class Slider(Widget):
     def draw(self, surf):
         if not self.visible:
             return
-        draw_text(surf, self.label(), (self.rect.x, self.rect.y), self.font_size, theme.FG)
-        draw_text(surf, self.fmt(self.value), (self.rect.right, self.rect.y), self.font_size, theme.FG,
+        label, value = self.label(), self.fmt(self.value)
+        value_size = fit_text(value, self.font_size, self.rect.width*.35, bold=True)
+        value_width = res.font(value_size,bold=True).size(value)[0]
+        gap = max(10, self.font_size//2)
+        label_size = fit_text(label, self.font_size, self.rect.width-value_width-gap,min_size=6)
+        draw_text(surf, label, (self.rect.x, self.rect.y), label_size, theme.FG)
+        draw_text(surf, value, (self.rect.right, self.rect.y), value_size, theme.FG,
                   anchor="topright", bold=True)
         pygame.draw.rect(surf, theme.BORDER, self.track, border_radius=2)
         x = self.track.x + self._to_frac(self.value) * self.track.width

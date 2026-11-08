@@ -40,6 +40,29 @@ def theory():
     run([PY, os.path.join("tools", "build_theory.py")])
 
 
+def copy_atomic(src, dst):
+    """Не обрезать старый файл: PNG иногда удерживается Windows как mapped section.
+
+    Новый файл сначала целиком записывается рядом; NTFS может заменить имя,
+    оставив старое содержимое доступным его текущему читателю.
+    """
+    handle, staged = tempfile.mkstemp(prefix=".build-", suffix=".part", dir=os.path.dirname(dst))
+    os.close(handle)
+    try:
+        shutil.copy2(src, staged)
+        for attempt in range(10):
+            try:
+                os.replace(staged, dst)
+                return dst
+            except PermissionError:
+                if attempt == 9:
+                    raise
+                time.sleep(0.2)
+    finally:
+        if os.path.exists(staged):
+            os.remove(staged)
+
+
 def windows(check):
     if sys.platform != "win32":
         sys.exit("Windows-версию можно собрать только на Windows (PyInstaller не собирает под другую ОС).")
@@ -75,7 +98,7 @@ def windows(check):
         run([PY, os.path.join("tools", "package.py"), "windows", os.path.join(apps, NAME), stage])
         # Windows может держать сам каталог открытым в Проводнике.
         # Не переименовываем каталог: переносим только готовые файлы поверх.
-        shutil.copytree(apps, target, dirs_exist_ok=True)
+        shutil.copytree(apps, target, dirs_exist_ok=True, copy_function=copy_atomic)
         for name in (NAME, NAME + "-dev"):
             archive = name + "-windows-x64.zip"
             os.replace(os.path.join(stage, archive), os.path.join(ROOT, "dist", archive))

@@ -18,7 +18,7 @@ from ..physics import correlation, markov, neimark as nm
 from ..ui import param_plane
 from ..ui.param_plane import ParamPlane, clamp
 from ..ui.phase_portrait import PhasePortrait
-from ..ui.plot import Axes, point_marker, graph_line, graph_lines, curve_line, fading_trail, boxed_text, dashed_polyline, label_box
+from ..ui.plot import Axes, point_marker, graph_line, graph_lines, curve_line, fading_trail, boxed_text, dashed_polyline, label_box, point_process
 from ..ui.widgets import Button, Segmented, Slider, draw_text, fit_text, remember_text
 from .base import Screen
 
@@ -63,6 +63,11 @@ def draw_legend(surf, items, right, top, fs):
         cy = top + height // 2
         if kind == "dash":
             dashed_polyline(surf, color, [(x, cy), (x + swatch, cy)], dash=6, gap=4)
+        elif kind == "circle":
+            point_marker(surf,color,(x+swatch/2,cy),5)
+        elif kind == "diamond":
+            cx = x+swatch/2
+            pygame.draw.polygon(surf,color,[(cx,cy-6),(cx+6,cy),(cx,cy+6),(cx-6,cy)])
         else:
             pygame.draw.rect(surf, color, (x + 6, cy - 5, swatch - 12, 10))
         surf.blit(img, (x + swatch + 6, top))
@@ -91,6 +96,10 @@ class DemoScreen(Screen):
         self.filling = False
         self.view = {"d": [0, c.view_d], "c": [0, c.view_c * S]}  # [начало, длина] окна просмотра
         self._pan = None
+        self.explain = True
+        self.zoom_select = False
+        self.zoom_drag = None
+        self.zoom_ylim = None
 
         self.mode_sel = Segmented([("d", lambda: t("mode_d")), ("c", lambda: t("mode_c"))], "d", self._set_mode)
         self.preset_sel = Segmented([("H", lambda: t("preset_H")), ("E", lambda: t("preset_E")),
@@ -109,9 +118,13 @@ class DemoScreen(Screen):
         self.b_step = Button(lambda: t("step"), self._step_click)
         self.b_reset = Button(lambda: t("reset"), self._reset)
         self.b_all = Button(lambda: t("build_all"), self._build_all)
+        self.explain_sel = Segmented([("explain", lambda: t("explain_mode")),
+                                      ("fast", lambda: t("fast_mode"))], "explain", self._set_explain)
+        self.b_loupe = Button(lambda: t("loupe_active") if self.zoom_select else t("loupe"), self._toggle_loupe)
+        self.b_view = Button(lambda: t("whole_process"), self._reset_view)
         self.b_back = Button(lambda: t("back"), lambda: app.show("menu"))
         self.widgets = [app.tabs, self.mode_sel, self.preset_sel, self.s_gamma, self.s_h, self.plane, self.s_n,
-                        self.s_speed, self.b_run, self.b_step, self.b_reset, self.b_all, self.b_back]
+                        self.s_speed, self.explain_sel, self.b_loupe, self.b_view, self.b_run, self.b_step, self.b_reset, self.b_all, self.b_back]
         self._recompute()
 
     # ---------- данные ----------
@@ -133,7 +146,7 @@ class DemoScreen(Screen):
             self.theory = markov.continuous_theory(p, S, self.lags[-1], moments, mean)
         self.est = correlation.Estimator(self.data)
         self.portrait.set_data(p, self.ys)
-        self.sigma = math.sqrt(self.est.var)
+        self.sigma = math.sqrt(max(self.est.var,1e-30))
         self.dev_max = max(abs(min(self.est.centered)), abs(max(self.est.centered))) / self.sigma
         self.lo, self.hi = min(self.data), max(self.data)
         self.values = {}
@@ -154,6 +167,7 @@ class DemoScreen(Screen):
         self.shift_from = 0.0
         self.running = False
         self.filling = False
+        self._single_step = False
 
     def _begin_step(self):
         if self.built >= len(self.lags):
@@ -162,6 +176,9 @@ class DemoScreen(Screen):
         self._value(self.lags[self.built])
         self.shift_from = self.shift
         self.phase = 0.0
+        start, length = self._visible_range()
+        count = min(config.demo.preview_pairs, length, len(self.data)-self.lags[self.built]-start)
+        self.preview = list(range(start, start+max(1,int(count))))
 
     def _finish_step(self):
         self.shift = float(self.lags[self.built])
@@ -170,17 +187,59 @@ class DemoScreen(Screen):
 
     def _toggle_run(self):
         self.filling = False
+        self._single_step = False
         if self.built >= len(self.lags):
             self._reset()
         self.running = not self.running
 
+    def _set_explain(self, name):
+        self.explain = name == "explain"
+        self._reset()
+
+    def _duration(self):
+        if not self.explain:
+            return 1/1.2
+        c = config.demo
+        return c.explain_shift + 2*len(self.preview)*c.explain_pair + c.explain_average
+
+    def _stage(self):
+        """(стадия, индекс пары, число показанных произведений, рост итогового столбика)."""
+        if self.phase is None:
+            return "done", None, None, 1.0
+        if not self.explain:
+            return "fast", None, None, ease((self.phase-PRODUCT_END)/(1-PRODUCT_END))
+        c = config.demo
+        elapsed = self.phase*self._duration()
+        if elapsed < c.explain_shift:
+            return "shift", None, 0, 0.0
+        elapsed -= c.explain_shift
+        pair = int(elapsed/(2*c.explain_pair))
+        if pair < len(self.preview):
+            product = elapsed%(2*c.explain_pair) >= c.explain_pair
+            return "product" if product else "pair", self.preview[pair], pair+int(product), 0.0
+        elapsed -= 2*len(self.preview)*c.explain_pair
+        return "average", None, None, ease(elapsed/c.explain_average)
+
     def _step_click(self):
-        self.running = False
-        self.filling = False
-        if self.phase is not None:
-            self._finish_step()
-        elif self.built < len(self.lags):
+        self.running = self.filling = False
+        self._single_step = not self.explain
+        if self.phase is None:
             self._begin_step()
+        elif not self.explain:
+            self._finish_step()
+        else:
+            c = config.demo
+            boundaries = [c.explain_shift]
+            boundaries += [c.explain_shift+j*c.explain_pair for j in range(1,2*len(self.preview)+1)]
+            boundaries += [self._duration()]
+            elapsed = self.phase*self._duration()
+            nxt = next((v for v in boundaries if v > elapsed+1e-6), self._duration())
+            self.phase = nxt/self._duration()+1e-8
+            shift_fraction = min(1, nxt/c.explain_shift)
+            target = self.lags[self.built]
+            self.shift = self.shift_from+(target-self.shift_from)*ease(shift_fraction)
+            if self.phase >= 1:
+                self._finish_step()
 
     def _build_all(self):
         self.running = False
@@ -196,7 +255,7 @@ class DemoScreen(Screen):
 
     def update(self, dt):
         first, last = self._cursor_range()
-        self.cursor += dt * CURSOR_SPEED
+        self.cursor += dt * CURSOR_SPEED * self.speed
         if not first <= self.cursor < last:
             self.cursor = float(first)
         if self.filling:
@@ -212,15 +271,20 @@ class DemoScreen(Screen):
             if self.running:
                 self._begin_step()
             return
-        self.phase += dt * self.speed * 1.2
+        if not self.running and not self._single_step:
+            return
+        self.phase += dt * self.speed / self._duration()
         target = self.lags[self.built]
-        self.shift = self.shift_from + (target - self.shift_from) * ease(self.phase / SHIFT_END)
+        self.shift = self.shift_from + (target - self.shift_from) * ease(self.phase / (config.demo.explain_shift/self._duration() if self.explain else SHIFT_END))
         if self.phase >= 1.0:
             self._finish_step()
 
     def current_lag(self):
         """Сдвиг, для которого показаны произведения, и их видимость 0..1."""
         if self.phase is not None:
+            if self.explain:
+                stage, _, count, _ = self._stage()
+                return self.lags[self.built], 0.0 if stage == "shift" else 1.0
             return self.lags[self.built], ease((self.phase - SHIFT_END) / (PRODUCT_END - SHIFT_END))
         if self.built:
             return self.lags[self.built - 1], 1.0
@@ -230,6 +294,7 @@ class DemoScreen(Screen):
 
     def _set_mode(self, mode):
         self.mode = mode
+        self.zoom_ylim = None
         self._recompute()
 
     def _set_preset(self, name):
@@ -289,9 +354,39 @@ class DemoScreen(Screen):
 
     # ---------- окно просмотра ----------
 
+    def _toggle_loupe(self):
+        self.zoom_select = not self.zoom_select
+        self.zoom_drag = self._pan = None
+
+    def _reset_view(self):
+        self.view[self.mode] = [0, config.demo.view_d if self.mode == "d" else config.demo.view_c*S]
+        self.zoom_ylim = None
+        self.zoom_select = False
+        self.zoom_drag = None
+        self._clamp_view()
+
+    def _apply_zoom(self, index, a, b):
+        ax = self.axes[index]
+        left, right = sorted((max(ax.rect.left,min(ax.rect.right,a[0])), max(ax.rect.left,min(ax.rect.right,b[0]))))
+        if right-left < 8:
+            return
+        start, end = ax.data_x(left)*self.unit, ax.data_x(right)*self.unit
+        self.view[self.mode] = [start, end-start]
+        self._clamp_view()
+        if abs(a[1]-b[1]) > 12:
+            def value(py):
+                py = max(ax.rect.top,min(ax.rect.bottom,py))
+                return ax.y1-(py-ax.rect.y)/ax.rect.height*(ax.y1-ax.y0)
+            lo,hi = sorted((value(a[1]),value(b[1])))
+            if index == 2:
+                lo,hi = self.est.mean+lo*self.sigma,self.est.mean+hi*self.sigma
+            if hi-lo > 1e-8:
+                self.zoom_ylim = lo,hi
+        self.zoom_select = False
+
     def _clamp_view(self):
         v = self.view[self.mode]
-        lo_len, hi_len = (10, 2000) if self.mode == "d" else (2 * S, 200 * S)
+        lo_len, hi_len = (3, 2000) if self.mode == "d" else (S // 2, 200 * S)
         v[1] = int(min(max(v[1], lo_len), hi_len))
         v[0] = int(min(max(v[0], 0), len(self.data) - v[1] - self.lags[-1] - 2))
 
@@ -302,6 +397,19 @@ class DemoScreen(Screen):
         if super().handle(event):
             return True
         v = self.view[self.mode]
+        if self.zoom_select and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for i,ax in enumerate(self.axes[:3]):
+                if ax.rect.collidepoint(event.pos):
+                    self.zoom_drag = (i,event.pos,event.pos)
+                    return True
+        if self.zoom_drag and event.type == pygame.MOUSEMOTION:
+            self.zoom_drag = (self.zoom_drag[0],self.zoom_drag[1],event.pos)
+            return True
+        if self.zoom_drag and event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            i,a,_ = self.zoom_drag
+            self._apply_zoom(i,a,event.pos)
+            self.zoom_drag = None
+            return True
         if event.type == pygame.MOUSEWHEEL and self._plots_hit(pygame.mouse.get_pos()):
             ax = self.axes[0]
             mx = pygame.mouse.get_pos()[0]
@@ -344,7 +452,7 @@ class DemoScreen(Screen):
         px = w - pw - m if self.app.panel_open else w + 12
         self.panel = pygame.Rect(px, m, pw, h - 2 * m)
         fs = int(u * 1.05)
-        for wdg in (self.mode_sel, self.preset_sel, self.b_run, self.b_step, self.b_reset, self.b_all, self.b_back):
+        for wdg in (self.mode_sel, self.preset_sel, self.b_run, self.b_step, self.b_reset, self.b_all, self.b_back, self.explain_sel, self.b_loupe, self.b_view):
             wdg.font_size = fs
         for s in (self.s_gamma, self.s_h, self.s_n, self.s_speed):
             s.font_size = int(u * 0.95)
@@ -357,7 +465,7 @@ class DemoScreen(Screen):
         y = m + 10
         self.labels = []
         self.tabs_rect = pygame.Rect(x, y, width, int(u * 2.3))  # переключатель вкладок ставит App
-        y += self.tabs_rect.height + gap * 3
+        y += self.tabs_rect.height + gap * 2
 
         def section(key):
             nonlocal y
@@ -366,7 +474,7 @@ class DemoScreen(Screen):
 
         section("sec_process")
         self.mode_sel.layout((x, y, width, row))
-        y += row + gap * 2
+        y += row + gap
         section("sec_params")
         self.preset_sel.layout((x, y, width, row))
         y += row + gap
@@ -390,6 +498,8 @@ class DemoScreen(Screen):
         self.b_run.rect = pygame.Rect(x, y2, bw, row)
         self.b_step.rect = pygame.Rect(x + bw + 6, y2, bw, row)
         self.b_reset.rect = pygame.Rect(x + 2 * (bw + 6), y2, width - 2 * (bw + 6), row)
+        y2 -= gap + row
+        self.explain_sel.layout((x,y2,width,row))
         y2 -= gap + slider_h
         self.s_speed.layout((x, y2, width, slider_h))
         y2 -= gap + slider_h
@@ -415,7 +525,13 @@ class DemoScreen(Screen):
         title_h, ticks_h, pgap = int(u * 1.5), int(u * 1.5), int(u * 0.6)
         weights = (1.0, 1.0, 1.15, 1.4)
         free = h - 2 * m - 4 * (title_h + ticks_h) - 3 * pgap
-        y = m
+        toolbar_h = int(u*2.1)
+        self.b_loupe.rect = pygame.Rect(lx,m,int(u*7),toolbar_h)
+        self.b_view.rect = pygame.Rect(lx+int(u*7.4),m,int(u*11),toolbar_h)
+        status_x = self.b_view.rect.right+u
+        self.status_rect = pygame.Rect(status_x,m,max(1,lx+lw-status_x),toolbar_h)
+        free -= toolbar_h+pgap
+        y = m+toolbar_h+pgap
         self.axes = []
         self.titles = []
         for wgt in weights:
@@ -445,13 +561,14 @@ class DemoScreen(Screen):
         self._draw_info(surf)
         self._draw_process(surf)
         self._draw_correlation(surf)
-        mouse = pygame.mouse.get_pos()
-        if self._plots_hit(mouse) and not self._pan:
-            img = res.font(int(u * 0.85)).render(t("zoom_hint"), True, theme.MUTED)
-            rect = img.get_rect(bottomleft=(mouse[0] + 14, mouse[1] - 6))
-            rect.clamp_ip(surf.get_rect())
-            label_box(surf, rect)
-            surf.blit(img, rect)
+        self._draw_status(surf)
+        if self.zoom_drag:
+            _,a,b = self.zoom_drag
+            rect = pygame.Rect(min(a[0],b[0]),min(a[1],b[1]),abs(b[0]-a[0]),abs(b[1]-a[1]))
+            layer = pygame.Surface(rect.size,pygame.SRCALPHA)
+            layer.fill(theme.PROCESS+(35,))
+            surf.blit(layer,rect)
+            pygame.draw.rect(surf,theme.PROCESS,rect,2)
 
     def _fmt_lag(self, lag):
         if self.mode == "d":
@@ -486,24 +603,12 @@ class DemoScreen(Screen):
     def _draw_series(self, surf, ax, values, offset, first, last, color, normalize=False, stems=True):
         """Рисует отсчёты values[first:last] в позициях (i - offset)."""
         mean = self.est.mean
-        pts = []
-        for i in range(max(first, 0), min(last, len(values))):
-            y = (values[i] - mean) / self.sigma if normalize else values[i]
-            pts.append((ax.px((i - offset) / self.unit), ax.py(y)))
-        if len(pts) < 2:
-            return
-        if self.mode == "d" and stems:
-            base = ax.py(0.0)
-            dense = len(pts) > 150
-            for px, py in pts:
-                graph_line(surf, color, (px, base), (px, py), 3)
-                if not dense:
-                    point_marker(surf, color, (px, py), 3)
-        elif self.mode == "d":
-            for px, py in pts:
-                point_marker(surf, color, (px, py), 3 if len(pts) < 150 else 1)
+        points = [((i-offset)/self.unit, (values[i]-mean)/self.sigma if normalize else values[i])
+                  for i in range(max(first,0),min(last,len(values)))]
+        if self.mode == "d":
+            point_process(surf,ax,points,color,secondary=color==theme.SHIFTED,stems=stems)
         else:
-            curve_line(surf, color, False, pts)
+            curve_line(surf,color,False,[ax.point(x,y) for x,y in points])
 
     def _draw_process(self, surf):
         u = self.u
@@ -511,7 +616,7 @@ class DemoScreen(Screen):
         start, length = self._visible_range()
         x0, x1 = start / self.unit, (start + length) / self.unit
         pad = 0.08 * (self.hi - self.lo)
-        ylim = (self.lo - pad, self.hi + pad)
+        ylim = self.zoom_ylim or (self.lo - pad, self.hi + pad)
         xlabel = t("axis_n") if self.mode == "d" else t("axis_t")
         d = "d" if self.mode == "d" else "c"
         lag_now = self.shift
@@ -529,6 +634,7 @@ class DemoScreen(Screen):
         surf.set_clip(ax.rect.inflate(8, 8))
         self._draw_series(surf, ax, self.data, 0, start, start + length + 1, theme.PROCESS)
         self._draw_cursor(surf, ax)
+        self._draw_pair_marker(surf,ax,False)
         surf.set_clip(None)
 
         # 2. сдвинутая копия
@@ -543,11 +649,14 @@ class DemoScreen(Screen):
         self._draw_series(surf, ax, self.data, lag_now, first, first + length + 2, theme.SHIFTED)
         surf.set_clip(None)
         self._draw_shift_arrow(surf, ax, lag_now)
+        self._draw_pair_marker(surf,ax,True)
 
         # 3. наложение и произведения
         ax = self.axes[2]
         lim = min(self.dev_max, 4.0) * 1.1
         ax.x0, ax.x1, ax.y0, ax.y1 = x0, x1, -lim, lim
+        if self.zoom_ylim:
+            ax.y0,ax.y1 = [(v-self.est.mean)/self.sigma for v in self.zoom_ylim]
         draw_text(surf, t("p3_" + d), self.titles[2], int(u * 1.0), bold=True)
         ax.frame(surf, fs, xlabel=xlabel)
         lag, alpha = self.current_lag()
@@ -555,12 +664,18 @@ class DemoScreen(Screen):
         if lag is not None and alpha > 0:
             layer = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
             c = self.est.centered
-            var = self.est.var
+            var = max(self.est.var,1e-30)
             n_vis = length
             bar_w = max(1, int(ax.rect.width / n_vis * (0.6 if self.mode == "d" else 1.0)) + (0 if self.mode == "d" else 1))
+            if self.mode == "d":
+                bar_w = min(round(2*config.window.process_marker_radius),bar_w)
             step = max(1, int(n_vis / ax.rect.width))
             zero = ax.py(0)
-            for i in range(start, min(start + length + 1, len(c) - lag), step):
+            stage, active, count, _ = self._stage()
+            indices = range(start, min(start+length+1,len(c)-lag),step)
+            if self.explain and self.phase is not None and count is not None:
+                indices = self.preview[:count]
+            for i in indices:
                 prod = c[i] * c[i + lag] / var
                 px = ax.px(i / self.unit)
                 py = ax.py(ax.clip_y(prod))
@@ -575,14 +690,45 @@ class DemoScreen(Screen):
         first = start + int(lag_now)
         self._draw_series(surf, ax, self.data, lag_now, first, first + length + 2, theme.SHIFTED, normalize=True,
                           stems=False)
+        if self.explain and self.phase is not None:
+            stage,active,_,_ = self._stage()
+            if active is not None:
+                x = active/self.unit
+                y1 = self.est.centered[active]/self.sigma
+                y2 = self.est.centered[active+lag]/self.sigma
+                point_marker(surf,theme.PROCESS,ax.point(x,y1),6,2)
+                point_marker(surf,theme.SHIFTED,ax.point(x,y2),8,2)
         surf.set_clip(None)
-        items = [("rect", theme.PROCESS, t("legend_orig")), ("rect", theme.SHIFTED, t("legend_shift")),
+        items = [("circle", theme.PROCESS, t("legend_orig")), ("diamond", theme.SHIFTED, t("legend_shift")),
                  ("rect", theme.POSITIVE, t("legend_pos")), ("rect", theme.NEGATIVE, t("legend_neg"))]
         draw_legend(surf, items, ax.rect.right - 6, ax.rect.y + 5, fs)
-        if lag is not None and alpha > 0.99:
-            txt = t("g_overlay_" + self.mode, v=theme.num(self._value(lag)))
-            boxed_text(surf, txt, res.font(int(u * 0.95), bold=True), theme.FG,
-                       bottomleft=(ax.rect.x + 8, ax.rect.bottom - 5))
+
+    def _draw_status(self, surf):
+        lag, _ = self.current_lag()
+        if lag is not None:
+            stage,active,_,_ = self._stage()
+            if self.explain and self.phase is not None and stage in ("pair","product"):
+                product = self.est.centered[active]*self.est.centered[active+lag]/max(self.est.var,1e-30)
+                txt = t("explain_"+stage, n=active, value=theme.num(product))
+            elif self.explain and self.phase is not None and stage == "shift":
+                txt = t("explain_shift")
+            else:
+                txt = t("explain_full", n=len(self.data)-lag, value=theme.num(self._value(lag)))
+            size = fit_text(txt,int(self.u*.95),self.status_rect.width,bold=True)
+            draw_text(surf,txt,self.status_rect.midleft,size,theme.FG,anchor="midleft",bold=True)
+
+    def _draw_pair_marker(self, surf, ax, shifted):
+        if not self.explain or self.phase is None:
+            return
+        _,active,_,_ = self._stage()
+        if active is None:
+            return
+        lag = self.lags[self.built] if shifted else 0
+        x,y = ax.point(active/self.unit,self.data[active+lag])
+        old = surf.get_clip()
+        surf.set_clip(ax.rect)
+        point_marker(surf,theme.SHIFTED if shifted else theme.PROCESS,(x,y),10,2)
+        surf.set_clip(old)
 
     def _draw_cursor(self, surf, ax):
         """Отмечает на графике процесса то место, где сейчас точка на фазовой плоскости."""
@@ -629,7 +775,7 @@ class DemoScreen(Screen):
             bar(lag, self._value(lag), theme.BAR)
         if self.phase is not None:
             lag = self.lags[self.built]
-            grow = ease((self.phase - PRODUCT_END) / (1 - PRODUCT_END))
+            grow = self._stage()[3]
             if grow > 0:
                 bar(lag, self._value(lag) * grow, theme.BAR_CURRENT)
             px = ax.px(self.shift / self.unit)
@@ -665,3 +811,4 @@ class DemoScreen(Screen):
         if steps:
             self._begin_step()
             self.phase = 0.85
+            self.shift = float(self.lags[self.built])

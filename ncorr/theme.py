@@ -14,8 +14,8 @@ SELECTED = (30, 30, 30)
 SELECTED_TEXT = (255, 255, 255)
 DISABLED_TEXT = (170, 170, 170)
 
-PROCESS = (20, 20, 20)
-SHIFTED = (30, 95, 190)
+PROCESS = (30, 95, 190)
+SHIFTED = (215, 95, 0)
 POSITIVE = (40, 150, 85)
 NEGATIVE = (205, 65, 55)
 BAR = (95, 95, 95)
@@ -24,8 +24,8 @@ THEORY = (225, 120, 0)
 CURSOR = (150, 60, 200)
 REGION = (232, 240, 250)
 REGION_NORMAL = (246, 238, 220)
-TWIN = (0, 150, 150)          # вторая, близкая траектория
-TWIN_LIGHT = (150, 210, 210)
+TWIN = (215, 95, 0)          # вторая, близкая траектория
+TWIN_LIGHT = (240, 170, 95)
 
 
 def unit(height):
